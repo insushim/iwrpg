@@ -1,0 +1,51 @@
+import { MapDef, genCollision } from './types';
+
+const map: MapDef = {
+  id: 'ashen_caverns',
+  name_ko: '잿빛 동굴',
+  name_en: 'Ashen Caverns',
+  width: 100,
+  height: 140,
+  bgm_track: 'field_ashen_growl',
+  ambient: 'cave',
+  ambient_color: '#241814',
+  weather: 'ash',
+  level_band: [28, 35],
+  collision: genCollision(100, 140, [
+    { x: 12, y: 14, w: 16, h: 10 },
+    { x: 40, y: 16, w: 18, h: 9 },
+    { x: 68, y: 14, w: 18, h: 10 },
+    { x: 14, y: 36, w: 16, h: 10 },
+    { x: 42, y: 38, w: 16, h: 10 },
+    { x: 70, y: 36, w: 14, h: 11 },
+    { x: 14, y: 60, w: 18, h: 10 },
+    { x: 44, y: 62, w: 14, h: 10 },
+    { x: 68, y: 60, w: 18, h: 12 },
+    { x: 16, y: 84, w: 16, h: 10 },
+    { x: 42, y: 86, w: 16, h: 10 },
+    { x: 68, y: 84, w: 16, h: 11 },
+    { x: 14, y: 108, w: 18, h: 12 },
+    { x: 42, y: 110, w: 16, h: 12 },
+    { x: 68, y: 108, w: 18, h: 12 },
+  ]),
+  spawn_points: [
+    { id: 'sp_ac_1', x: 32, y: 28, monster_pool: ['m_ogre', 'm_cave_spider'], max_concurrent: 5, respawn_sec: 28 },
+    { id: 'sp_ac_2', x: 60, y: 30, monster_pool: ['m_cave_spider'], max_concurrent: 5, respawn_sec: 24 },
+    { id: 'sp_ac_3', x: 88, y: 32, monster_pool: ['m_centaur'], max_concurrent: 4, respawn_sec: 30 },
+    { id: 'sp_ac_4', x: 32, y: 52, monster_pool: ['m_ogre', 'm_centaur'], max_concurrent: 5, respawn_sec: 28 },
+    { id: 'sp_ac_5', x: 60, y: 54, monster_pool: ['m_cave_spider'], max_concurrent: 5, respawn_sec: 24 },
+    { id: 'sp_ac_6', x: 36, y: 76, monster_pool: ['m_ogre'], max_concurrent: 4, respawn_sec: 30 },
+    { id: 'sp_ac_7', x: 60, y: 78, monster_pool: ['m_centaur', 'm_cave_spider'], max_concurrent: 5, respawn_sec: 28 },
+    { id: 'sp_ac_8', x: 50, y: 102, monster_pool: ['m_ogre', 'm_centaur'], max_concurrent: 5, respawn_sec: 30 },
+  ],
+  npc_locations: [],
+  portals: [
+    { id: 'p_ac_north', x: 48, y: 2, w: 4, h: 2, target_map: 'verity_citadel', target_x: 45, target_y: 86, label_ko: '진리의 성채로' },
+    { id: 'p_ac_west', x: 2, y: 70, w: 2, h: 4, target_map: 'ruined_citadel', target_x: 136, target_y: 60, label_ko: '폐허의 성채로' },
+    { id: 'p_ac_east', x: 96, y: 70, w: 2, h: 4, target_map: 'ruined_temple', target_x: 4, target_y: 60, label_ko: '폐허의 신전으로' },
+    { id: 'p_ac_south', x: 48, y: 136, w: 4, h: 2, target_map: 'pyre_peaks', target_x: 65, target_y: 4, label_ko: '화염의 봉우리로' },
+  ],
+  is_safe_zone: false,
+};
+
+export default map;

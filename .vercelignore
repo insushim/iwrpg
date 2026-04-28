@@ -1,0 +1,8 @@
+apps/server
+supabase
+docs
+tools
+.env
+.env.local
+**/node_modules
+**/.turbo

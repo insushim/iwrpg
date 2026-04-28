@@ -1,0 +1,52 @@
+import { MapDef, genCollision } from './types';
+
+const map: MapDef = {
+  id: 'azure_grove',
+  name_ko: '창공의 숲',
+  name_en: 'Azure Grove',
+  width: 120,
+  height: 120,
+  bgm_track: 'field_azure_chime',
+  ambient: 'forest',
+  ambient_color: '#3a5a78',
+  weather: 'clear',
+  level_band: [32, 40],
+  collision: genCollision(120, 120, [
+    { x: 14, y: 14, w: 8, h: 8 },
+    { x: 32, y: 16, w: 9, h: 7 },
+    { x: 52, y: 14, w: 8, h: 9 },
+    { x: 72, y: 18, w: 9, h: 7 },
+    { x: 92, y: 14, w: 8, h: 9 },
+    { x: 18, y: 38, w: 8, h: 9 },
+    { x: 40, y: 40, w: 9, h: 8 },
+    { x: 60, y: 38, w: 8, h: 9 },
+    { x: 80, y: 42, w: 9, h: 8 },
+    { x: 100, y: 40, w: 8, h: 9 },
+    { x: 14, y: 62, w: 9, h: 8 },
+    { x: 36, y: 64, w: 8, h: 9 },
+    { x: 56, y: 62, w: 9, h: 8 },
+    { x: 78, y: 64, w: 8, h: 9 },
+    { x: 26, y: 88, w: 9, h: 8 },
+    { x: 60, y: 90, w: 8, h: 9 },
+    { x: 92, y: 88, w: 9, h: 8 },
+  ]),
+  spawn_points: [
+    { id: 'sp_ag_1', x: 28, y: 30, monster_pool: ['m_dryad', 'm_treant'], max_concurrent: 5, respawn_sec: 28 },
+    { id: 'sp_ag_2', x: 56, y: 30, monster_pool: ['m_dryad'], max_concurrent: 5, respawn_sec: 26 },
+    { id: 'sp_ag_3', x: 84, y: 32, monster_pool: ['m_treant'], max_concurrent: 4, respawn_sec: 32 },
+    { id: 'sp_ag_4', x: 32, y: 54, monster_pool: ['m_dryad', 'm_treant'], max_concurrent: 5, respawn_sec: 28 },
+    { id: 'sp_ag_5', x: 64, y: 54, monster_pool: ['m_dryad'], max_concurrent: 5, respawn_sec: 26 },
+    { id: 'sp_ag_6', x: 92, y: 56, monster_pool: ['m_treant'], max_concurrent: 4, respawn_sec: 30 },
+    { id: 'sp_ag_7', x: 50, y: 80, monster_pool: ['m_treant', 'm_dryad'], max_concurrent: 5, respawn_sec: 28 },
+    { id: 'sp_ag_named', x: 60, y: 102, monster_pool: ['n_treant_lord'], max_concurrent: 1, respawn_sec: 5400 },
+  ],
+  npc_locations: [],
+  portals: [
+    { id: 'p_ag_north', x: 58, y: 2, w: 4, h: 2, target_map: 'ruined_citadel', target_x: 68, target_y: 116, label_ko: '폐허의 성채로' },
+    { id: 'p_ag_east', x: 116, y: 60, w: 2, h: 4, target_map: 'verity_citadel', target_x: 4, target_y: 43, label_ko: '진리의 성채로' },
+    { id: 'p_ag_south', x: 58, y: 116, w: 4, h: 2, target_map: 'aether_rift', target_x: 80, target_y: 4, label_ko: '천공 균열로' },
+  ],
+  is_safe_zone: false,
+};
+
+export default map;

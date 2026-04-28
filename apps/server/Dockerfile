@@ -1,0 +1,38 @@
+# Runeword Chronicle — Colyseus server
+# Multi-stage to keep the runtime image small. Workspace-aware (pnpm + monorepo).
+
+FROM node:22-alpine AS base
+WORKDIR /app
+RUN corepack enable && corepack prepare pnpm@10.0.0 --activate
+
+# ---- deps ----
+FROM base AS deps
+COPY pnpm-workspace.yaml pnpm-lock.yaml package.json tsconfig.base.json ./
+COPY packages/shared/package.json ./packages/shared/
+COPY apps/server/package.json ./apps/server/
+# server tsconfig pulls in client/src/data/** for type-checking; keep it minimal
+COPY apps/client/package.json ./apps/client/
+RUN pnpm install --frozen-lockfile --prod=false
+
+# ---- build (just compile shared; server runs via tsx at runtime) ----
+FROM deps AS build
+COPY packages/shared ./packages/shared
+COPY apps/server ./apps/server
+COPY apps/client/src/data ./apps/client/src/data
+RUN pnpm --filter shared build
+
+# ---- runtime ----
+FROM base AS runtime
+ENV NODE_ENV=production
+ENV PORT=8080
+COPY --from=build /app/node_modules ./node_modules
+COPY --from=build /app/packages ./packages
+COPY --from=build /app/apps/server ./apps/server
+COPY --from=build /app/apps/client/src/data ./apps/client/src/data
+COPY --from=build /app/pnpm-workspace.yaml /app/package.json /app/tsconfig.base.json ./
+
+WORKDIR /app/apps/server
+EXPOSE 8080
+HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
+  CMD wget -qO- http://localhost:${PORT}/health || exit 1
+CMD ["pnpm", "start"]

@@ -1,0 +1,51 @@
+import { MapDef, genCollision } from './types';
+
+const map: MapDef = {
+  id: 'aurora_town',
+  name_ko: '여명 마을',
+  name_en: 'Aurora Town',
+  width: 60,
+  height: 60,
+  bgm_track: 'town_aurora_calm',
+  ambient: 'town',
+  ambient_color: '#d8c89a',
+  weather: 'clear',
+  level_band: [1, 100],
+  collision: genCollision(60, 60, [
+    { x: 8, y: 8, w: 10, h: 6 },
+    { x: 22, y: 8, w: 8, h: 6 },
+    { x: 38, y: 8, w: 12, h: 7 },
+    { x: 8, y: 22, w: 8, h: 7 },
+    { x: 22, y: 24, w: 10, h: 6 },
+    { x: 40, y: 22, w: 9, h: 6 },
+    { x: 12, y: 38, w: 8, h: 8 },
+    { x: 28, y: 40, w: 10, h: 6 },
+    { x: 44, y: 40, w: 8, h: 7 },
+    { x: 26, y: 14, w: 8, h: 4 },
+    { x: 50, y: 30, w: 6, h: 8 },
+  ]),
+  spawn_points: [],
+  npc_locations: [
+    { id: 'npc_aurora_merchant_lina', x: 18, y: 16 },
+    { id: 'npc_aurora_smith_dorgan', x: 32, y: 16 },
+    { id: 'npc_aurora_priest_mirelle', x: 46, y: 17 },
+    { id: 'npc_aurora_quest_baren', x: 16, y: 32 },
+    { id: 'npc_aurora_innkeeper_haru', x: 28, y: 32 },
+    { id: 'npc_aurora_guard_kael', x: 5, y: 30 },
+    { id: 'npc_aurora_guard_renn', x: 55, y: 30 },
+    { id: 'npc_aurora_bard_seon', x: 36, y: 33 },
+    { id: 'npc_aurora_banker_milos', x: 18, y: 48 },
+    { id: 'npc_aurora_scholar_aleth', x: 34, y: 48 },
+    { id: 'npc_aurora_transformer_vael', x: 50, y: 48 },
+    { id: 'npc_aurora_gacha_selevis', x: 30, y: 22 },
+  ],
+  portals: [
+    { id: 'p_at_north', x: 28, y: 2, w: 4, h: 2, target_map: 'aurora_fields', target_x: 40, target_y: 76, label_ko: '여명 평원으로' },
+    { id: 'p_at_west', x: 2, y: 28, w: 2, h: 4, target_map: 'forgotten_meadow', target_x: 96, target_y: 40, label_ko: '잊혀진 초원으로' },
+    { id: 'p_at_east', x: 56, y: 28, w: 2, h: 4, target_map: 'sunken_mine', target_x: 4, target_y: 60, label_ko: '침몰 광산으로' },
+    { id: 'p_at_south', x: 28, y: 56, w: 4, h: 2, target_map: 'crimson_fortress', target_x: 35, target_y: 4, label_ko: '진홍 요새로' },
+  ],
+  is_safe_zone: true,
+};
+
+export default map;

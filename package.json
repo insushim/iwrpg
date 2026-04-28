@@ -1,0 +1,23 @@
+{
+  "name": "runeword-chronicle",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Runeword Chronicle: Call of the Aether — English Vocab MMORPG",
+  "scripts": {
+    "dev": "concurrently -n SERVER,CLIENT -c yellow,cyan \"pnpm --filter server dev\" \"pnpm --filter client dev\"",
+    "build": "pnpm --filter shared build && pnpm --filter server build && pnpm --filter client build",
+    "build:shared": "pnpm --filter shared build",
+    "qa": "node tools/visual-qa.js",
+    "assets:priority1": "bash tools/generate-priority1-assets.sh",
+    "assets:slice": "node tools/slice-spritesheet.js",
+    "supabase:start": "supabase start",
+    "supabase:stop": "supabase stop",
+    "supabase:reset": "supabase db reset"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.0",
+    "puppeteer": "^24.42.0",
+    "typescript": "^5.6.3"
+  },
+  "packageManager": "pnpm@10.0.0"
+}

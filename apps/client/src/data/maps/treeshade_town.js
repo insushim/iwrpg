@@ -1,0 +1,41 @@
+import { genCollision } from './types';
+const map = {
+    id: 'treeshade_town',
+    name_ko: '나무그늘 마을',
+    name_en: 'Treeshade Town',
+    width: 50,
+    height: 50,
+    bgm_track: 'town_treeshade_whisper',
+    ambient: 'forest',
+    ambient_color: '#3a5a3c',
+    weather: 'fog',
+    level_band: [10, 100],
+    collision: genCollision(50, 50, [
+        { x: 6, y: 6, w: 8, h: 6 },
+        { x: 20, y: 6, w: 10, h: 6 },
+        { x: 36, y: 8, w: 8, h: 6 },
+        { x: 6, y: 22, w: 9, h: 7 },
+        { x: 22, y: 24, w: 10, h: 6 },
+        { x: 38, y: 26, w: 6, h: 6 },
+        { x: 12, y: 38, w: 10, h: 6 },
+        { x: 30, y: 38, w: 12, h: 7 },
+    ]),
+    spawn_points: [],
+    npc_locations: [
+        { id: 'npc_treeshade_merchant_yuna', x: 14, y: 14 },
+        { id: 'npc_treeshade_smith_borak', x: 26, y: 14 },
+        { id: 'npc_treeshade_priest_tanya', x: 40, y: 16 },
+        { id: 'npc_treeshade_quest_arvin', x: 12, y: 30 },
+        { id: 'npc_treeshade_innkeeper_petra', x: 28, y: 32 },
+        { id: 'npc_treeshade_guard_rayne', x: 4, y: 25 },
+        { id: 'npc_treeshade_guard_voss', x: 45, y: 25 },
+        { id: 'npc_treeshade_bard_lior', x: 22, y: 44 },
+    ],
+    portals: [
+        { id: 'p_ts_north', x: 23, y: 2, w: 4, h: 2, target_map: 'whisper_woods', target_x: 50, target_y: 96, label_ko: '속삭이는 숲으로' },
+        { id: 'p_ts_west', x: 2, y: 23, w: 2, h: 4, target_map: 'forgotten_meadow', target_x: 4, target_y: 40, label_ko: '잊혀진 초원으로' },
+        { id: 'p_ts_south', x: 23, y: 46, w: 4, h: 2, target_map: 'mistwail_marsh', target_x: 60, target_y: 4, label_ko: '안개늪지로' },
+    ],
+    is_safe_zone: true,
+};
+export default map;
