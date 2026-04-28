@@ -1,1 +1,2 @@
-export { ALL_RECIPES, type CraftingRecipe } from '../../../client/src/data/recipes.js';
+export { ALL_RECIPES } from '../../../client/src/data/recipes.js';
+export type { CraftingRecipe } from '../../../client/src/data/recipes.js';

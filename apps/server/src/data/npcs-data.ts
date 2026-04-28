@@ -1,1 +1,2 @@
-export { ALL_NPCS, type NPCDef, type NPCRole } from '../../../client/src/data/npcs.js';
+export { ALL_NPCS } from '../../../client/src/data/npcs.js';
+export type { NPCDef, NPCRole } from '../../../client/src/data/npcs.js';
