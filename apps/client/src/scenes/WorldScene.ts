@@ -4,6 +4,8 @@ import { NetClient } from '../network/ColyseusClient.js';
 import { TILE_SIZE } from 'shared';
 import { AudioManager } from '../systems/AudioManager.js';
 import { Wordbook } from '../ui/WordbookModal.js';
+import { ALL_MAPS } from '../data/maps/index.js';
+import { ALL_NPCS } from '../data/npcs.js';
 
 interface PlayerSprite {
   container: Phaser.GameObjects.Container;
@@ -43,7 +45,12 @@ export class WorldScene extends Phaser.Scene {
 
     this.setupInput();
     this.bindNetwork();
-    this.renderTiles('aurora_town');
+    // Try to read mapId from world room state when ready; default to aurora_town
+    const initialMap = (NetClient.inst.worldRoom?.state as any)?.mapId || 'aurora_town';
+    this.renderTiles(initialMap);
+    this.renderScenery(initialMap);
+    this.renderNPCs(initialMap);
+    this.renderPortals(initialMap);
   }
 
   private bindNetwork() {
@@ -261,9 +268,9 @@ export class WorldScene extends Phaser.Scene {
     // Auto-scale: codex art is 256+px while procedural placeholder is 32×32. Normalize to ~32×32 footprint.
     const tex = this.textures.get(`char_${player.classId}`).getSourceImage() as any;
     const w = tex?.width ?? 32;
-    body.setScale(w > 64 ? 32 / w : 1.0);
-    body.setOrigin(0.5, 0.7);
-    const label = this.add.text(0, -22, player.name + (isMe ? ' ✦' : ''), {
+    body.setScale(w > 64 ? 56 / w : 1.0);
+    body.setOrigin(0.5, 0.78);
+    const label = this.add.text(0, -32, player.name + (isMe ? ' ✦' : ''), {
       fontFamily: 'Noto Sans KR, sans-serif',
       fontSize: '11px',
       color: isMe ? '#FCD34D' : '#E8E1C9',
@@ -281,9 +288,9 @@ export class WorldScene extends Phaser.Scene {
     const body = this.add.image(0, 0, `mon_${tier}`);
     const tex = this.textures.get(`mon_${tier}`).getSourceImage() as any;
     const w = tex?.width ?? 28;
-    const baseScale = w > 64 ? 32 / w : 1.0;
+    const baseScale = w > 64 ? 48 / w : 1.0;
     body.setScale(baseScale * (m.isBoss ? 1.8 : m.isNamed ? 1.3 : 1.0));
-    body.setOrigin(0.5, 0.7);
+    body.setOrigin(0.5, 0.75);
     c.add(body);
     return { container: c, body };
   }
@@ -306,6 +313,153 @@ export class WorldScene extends Phaser.Scene {
       duration: 1200, ease: 'Cubic.out',
       onComplete: () => text.destroy(),
     });
+  }
+
+  private renderScenery(mapId: string) {
+    const map = ALL_MAPS[mapId];
+    if (!map) return;
+    // Deterministic pseudo-random by map id so layout is stable per map
+    const seed = Array.from(mapId).reduce((a, c) => a + c.charCodeAt(0), 0);
+    let rng = seed;
+    const rand = () => { rng = (rng * 9301 + 49297) % 233280; return rng / 233280; };
+    const W = this.mapWidth, H = this.mapHeight;
+    const place = (key: string, x: number, y: number, depth = 0) => {
+      const img = this.add.image(x * TILE_SIZE + TILE_SIZE / 2, y * TILE_SIZE + TILE_SIZE / 2, key)
+        .setOrigin(0.5, 0.85)
+        .setDepth(depth);
+      this.tileLayer.add(img);
+    };
+    const isWalkable = (x: number, y: number) => {
+      const r = map.collision?.[y]?.[x];
+      return r === 0 || r === undefined;
+    };
+
+    if (map.is_safe_zone || mapId.includes('town') || mapId.includes('haven')) {
+      // Town layout: fountain center + buildings around NPC locations + decorative trees on edges
+      const cx = Math.floor(W / 2), cy = Math.floor(H / 2);
+      place('scenery_fountain', cx, cy, 5);
+      // Buildings: place near NPC locations (each NPC gets a house behind them)
+      for (const loc of map.npc_locations ?? []) {
+        const bx = loc.x;
+        const by = Math.max(2, loc.y - 2);
+        const id = loc.id;
+        const key = id.includes('innkeeper') ? 'scenery_inn'
+          : id.includes('merchant') || id.includes('smith') || id.includes('banker') || id.includes('gacha') ? 'scenery_shop'
+          : id.includes('priest') || id.includes('scholar') ? 'scenery_temple'
+          : 'scenery_house';
+        place(key, bx, by, 3);
+      }
+      // Banner pairs near town gates / center
+      for (let i = 0; i < 6; i++) {
+        const bx = 4 + Math.floor(rand() * (W - 8));
+        const by = 4 + Math.floor(rand() * (H - 8));
+        if (isWalkable(bx, by)) place('scenery_banner', bx, by, 2);
+      }
+      // Edge trees + bushes (decoration)
+      for (let i = 0; i < 40; i++) {
+        const ex = rand() < 0.5 ? Math.floor(rand() * 5) : W - 1 - Math.floor(rand() * 5);
+        const ey = Math.floor(rand() * H);
+        if (isWalkable(ex, ey)) place('scenery_tree', ex, ey, 2);
+      }
+      for (let i = 0; i < 20; i++) {
+        const bx = Math.floor(rand() * W);
+        const by = Math.floor(rand() * H);
+        if (isWalkable(bx, by) && Math.abs(bx - cx) > 5) place('scenery_bush', bx, by, 1);
+      }
+    } else if (mapId.includes('cave') || mapId.includes('mine') || mapId.includes('caverns')) {
+      // Cave: rocks scattered, lanterns on edges
+      for (let i = 0; i < 80; i++) {
+        const x = Math.floor(rand() * W);
+        const y = Math.floor(rand() * H);
+        if (isWalkable(x, y)) place('scenery_rock', x, y, 1);
+      }
+      for (let i = 0; i < 15; i++) {
+        const x = Math.floor(rand() * W);
+        const y = Math.floor(rand() * H);
+        if (isWalkable(x, y)) place('scenery_lantern', x, y, 2);
+      }
+    } else if (mapId.includes('citadel') || mapId.includes('temple') || mapId.includes('ruined')) {
+      // Ruins: occasional pillars (use temple sprite small) + rocks
+      for (let i = 0; i < 30; i++) {
+        const x = Math.floor(rand() * W);
+        const y = Math.floor(rand() * H);
+        if (isWalkable(x, y)) place('scenery_temple', x, y, 2);
+      }
+      for (let i = 0; i < 50; i++) {
+        const x = Math.floor(rand() * W);
+        const y = Math.floor(rand() * H);
+        if (isWalkable(x, y)) place('scenery_rock', x, y, 1);
+      }
+    } else {
+      // Field / forest: lots of trees, some rocks and bushes
+      const treeCount = mapId.includes('woods') || mapId.includes('grove') || mapId.includes('meadow') ? 120 : 60;
+      for (let i = 0; i < treeCount; i++) {
+        const x = Math.floor(rand() * W);
+        const y = Math.floor(rand() * H);
+        if (isWalkable(x, y)) place('scenery_tree', x, y, 2);
+      }
+      for (let i = 0; i < 30; i++) {
+        const x = Math.floor(rand() * W);
+        const y = Math.floor(rand() * H);
+        if (isWalkable(x, y)) place('scenery_rock', x, y, 1);
+      }
+      for (let i = 0; i < 50; i++) {
+        const x = Math.floor(rand() * W);
+        const y = Math.floor(rand() * H);
+        if (isWalkable(x, y)) place('scenery_bush', x, y, 1);
+      }
+    }
+  }
+
+  private renderNPCs(mapId: string) {
+    const map = ALL_MAPS[mapId];
+    if (!map?.npc_locations) return;
+    for (const loc of map.npc_locations) {
+      const def = ALL_NPCS.find(n => n.id === loc.id);
+      const cx = loc.x * TILE_SIZE + TILE_SIZE / 2;
+      const cy = loc.y * TILE_SIZE + TILE_SIZE / 2;
+      const c = this.add.container(cx, cy);
+      // Body — golden circle for NPCs (procedural placeholder until codex NPC sprites generated)
+      const body = this.add.image(0, 0, 'npc_default').setScale(1.0).setOrigin(0.5, 0.7);
+      // Name plate
+      const name = def?.name_ko ?? loc.id;
+      const label = this.add.text(0, -22, '✦ ' + name, {
+        fontFamily: 'Noto Sans KR, sans-serif',
+        fontSize: '11px',
+        color: '#FCD34D',
+        stroke: '#000000',
+        strokeThickness: 3,
+      }).setOrigin(0.5);
+      // ! marker above (interaction hint)
+      const hint = this.add.text(0, -38, '!', {
+        fontFamily: 'Cinzel, serif',
+        fontSize: '14px',
+        color: '#FFD700',
+        stroke: '#000000',
+        strokeThickness: 3,
+      }).setOrigin(0.5);
+      this.tweens.add({ targets: hint, y: -42, yoyo: true, repeat: -1, duration: 700, ease: 'Sine.inOut' });
+      c.add([body, label, hint]);
+    }
+  }
+
+  private renderPortals(mapId: string) {
+    const map = ALL_MAPS[mapId];
+    if (!map?.portals) return;
+    for (const p of map.portals) {
+      const cx = (p.x + p.w / 2) * TILE_SIZE;
+      const cy = (p.y + p.h / 2) * TILE_SIZE;
+      const ring = this.add.image(cx, cy, 'tap_target').setScale(2.5).setAlpha(0.6).setTint(0x7DD3FC);
+      this.tweens.add({ targets: ring, alpha: 0.2, scale: 3, yoyo: true, repeat: -1, duration: 1000, ease: 'Sine.inOut' });
+      const label = this.add.text(cx, cy - 30, '➤ ' + p.label_ko, {
+        fontFamily: 'Cinzel, serif',
+        fontSize: '13px',
+        color: '#7DD3FC',
+        stroke: '#000000',
+        strokeThickness: 4,
+      }).setOrigin(0.5).setDepth(50);
+      this.tweens.add({ targets: label, y: cy - 35, yoyo: true, repeat: -1, duration: 1200, ease: 'Sine.inOut' });
+    }
   }
 
   private renderTiles(mapId: string) {

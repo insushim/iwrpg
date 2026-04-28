@@ -84,6 +84,105 @@ export class BootScene extends Phaser.Scene {
     g.generateTexture('drop_marker', 16, 16);
     g.destroy();
 
+    // ========= Scenery (procedural buildings, trees, rocks, fountain) =========
+    // House — wooden walls + tile roof
+    const h = this.add.graphics();
+    h.fillStyle(0x6B4423, 1); h.fillRect(2, 18, 28, 18);     // wall
+    h.fillStyle(0x4A2C19, 1); h.fillRect(2, 18, 28, 2);       // wall top trim
+    h.fillStyle(0x8B2E2E, 1); h.fillTriangle(0, 18, 16, 4, 32, 18);  // roof
+    h.fillStyle(0x6B1F1F, 1); h.fillTriangle(0, 18, 16, 6, 32, 18);
+    h.fillStyle(0x2A1810, 1); h.fillRect(13, 24, 6, 12);      // door
+    h.fillStyle(0xFCD34D, 0.8); h.fillRect(6, 22, 4, 4); h.fillRect(22, 22, 4, 4); // windows
+    h.generateTexture('scenery_house', 32, 38);
+    h.destroy();
+
+    // Shop — bigger, with banner
+    const s = this.add.graphics();
+    s.fillStyle(0x7A4F2A, 1); s.fillRect(2, 20, 36, 22);
+    s.fillStyle(0xC9A227, 1); s.fillTriangle(0, 20, 20, 4, 40, 20);  // golden roof
+    s.fillStyle(0xA08233, 1); s.fillTriangle(0, 20, 20, 7, 40, 20);
+    s.fillStyle(0xB33A3A, 1); s.fillRect(36, 8, 3, 12);  // flag pole
+    s.fillStyle(0xC9A227, 1); s.fillTriangle(39, 8, 48, 12, 39, 16);
+    s.fillStyle(0x2A1810, 1); s.fillRect(17, 30, 6, 12);
+    s.fillStyle(0xE8E1C9, 0.7); s.fillRect(7, 24, 5, 5); s.fillRect(28, 24, 5, 5);
+    s.generateTexture('scenery_shop', 48, 44);
+    s.destroy();
+
+    // Inn — large, multi-window
+    const i = this.add.graphics();
+    i.fillStyle(0x7A4F2A, 1); i.fillRect(2, 22, 44, 26);
+    i.fillStyle(0x4A2D1A, 1); i.fillRect(2, 22, 44, 3);
+    i.fillStyle(0x4A2C19, 1); i.fillTriangle(0, 22, 24, 5, 48, 22);
+    i.fillStyle(0x2D2010, 1); i.fillTriangle(0, 22, 24, 8, 48, 22);
+    i.fillStyle(0x2A1810, 1); i.fillRect(20, 34, 8, 14);
+    i.fillStyle(0xFCD34D, 0.85); i.fillRect(6, 28, 5, 5); i.fillRect(15, 28, 5, 5); i.fillRect(28, 28, 5, 5); i.fillRect(37, 28, 5, 5);
+    i.generateTexture('scenery_inn', 48, 48);
+    i.destroy();
+
+    // Temple/altar — marble + golden orb
+    const t1 = this.add.graphics();
+    t1.fillStyle(0xCFCBC0, 1); t1.fillRect(2, 14, 28, 26);
+    t1.fillStyle(0xE5E1D5, 1); t1.fillTriangle(0, 14, 16, 0, 32, 14);
+    t1.fillStyle(0xC9A227, 1); t1.fillCircle(16, 22, 5);
+    t1.lineStyle(2, 0xFFD700, 1); t1.strokeCircle(16, 22, 7);
+    t1.fillStyle(0x2A1810, 1); t1.fillRect(13, 30, 6, 10);
+    t1.generateTexture('scenery_temple', 32, 40);
+    t1.destroy();
+
+    // Fountain — circular blue water + stone rim
+    const f = this.add.graphics();
+    f.fillStyle(0x363B43, 1); f.fillCircle(20, 20, 18);
+    f.fillStyle(0x4A4F58, 1); f.fillCircle(20, 20, 16);
+    f.fillStyle(0x1E3A5F, 1); f.fillCircle(20, 20, 12);
+    f.fillStyle(0x7DD3FC, 0.8); f.fillCircle(20, 20, 8);
+    f.fillStyle(0xCFCBC0, 1); f.fillCircle(20, 20, 3);
+    f.fillStyle(0xE5E1D5, 0.9); f.fillCircle(20, 18, 1.5);
+    f.generateTexture('scenery_fountain', 40, 40);
+    f.destroy();
+
+    // Tree — pine cluster
+    const tr = this.add.graphics();
+    tr.fillStyle(0x4A2C19, 1); tr.fillRect(10, 22, 4, 8);    // trunk
+    tr.fillStyle(0x1F3A1A, 1); tr.fillTriangle(0, 24, 12, 4, 24, 24);
+    tr.fillStyle(0x2D5030, 1); tr.fillTriangle(2, 22, 12, 6, 22, 22);
+    tr.fillStyle(0x3A6240, 1); tr.fillTriangle(4, 18, 12, 8, 20, 18);
+    tr.fillStyle(0x4A7848, 1); tr.fillTriangle(5, 14, 12, 10, 19, 14);
+    tr.generateTexture('scenery_tree', 24, 30);
+    tr.destroy();
+
+    // Rock — gray boulder
+    const r = this.add.graphics();
+    r.fillStyle(0x363B43, 1); r.fillCircle(10, 12, 9);
+    r.fillStyle(0x4A4F58, 1); r.fillCircle(10, 11, 8);
+    r.fillStyle(0x6B7280, 0.7); r.fillCircle(8, 9, 3);
+    r.generateTexture('scenery_rock', 20, 22);
+    r.destroy();
+
+    // Bush — green tuft
+    const b = this.add.graphics();
+    b.fillStyle(0x2D4F30, 1); b.fillCircle(8, 10, 7);
+    b.fillStyle(0x3A6240, 1); b.fillCircle(7, 9, 6);
+    b.fillStyle(0x4A7848, 0.8); b.fillCircle(6, 8, 3);
+    b.generateTexture('scenery_bush', 16, 18);
+    b.destroy();
+
+    // Banner — fabric flag
+    const bn = this.add.graphics();
+    bn.fillStyle(0x4A2C19, 1); bn.fillRect(7, 0, 2, 24);     // pole
+    bn.fillStyle(0xC9A227, 1); bn.fillTriangle(9, 4, 18, 8, 9, 14);
+    bn.fillStyle(0xB33A3A, 1); bn.fillRect(9, 4, 9, 2);
+    bn.generateTexture('scenery_banner', 18, 24);
+    bn.destroy();
+
+    // Lantern — glowing fire
+    const ln = this.add.graphics();
+    ln.fillStyle(0x4A2C19, 1); ln.fillRect(6, 0, 2, 8);
+    ln.fillStyle(0xFCD34D, 1); ln.fillCircle(7, 12, 5);
+    ln.fillStyle(0xF97316, 0.8); ln.fillCircle(7, 11, 3);
+    ln.fillStyle(0xFFD700, 1); ln.fillCircle(7, 10, 1.5);
+    ln.generateTexture('scenery_lantern', 14, 18);
+    ln.destroy();
+
     // Tap target indicator
     const t = this.add.graphics();
     t.lineStyle(2, 0x7DD3FC, 0.8);
