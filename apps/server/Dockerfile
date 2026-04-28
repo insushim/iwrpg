@@ -19,6 +19,8 @@ FROM deps AS build
 COPY packages/shared ./packages/shared
 COPY apps/server ./apps/server
 COPY apps/client/src/data ./apps/client/src/data
+# Force-remove any stale .js files (Docker cache may keep old shadows that break tsx ESM resolution)
+RUN find apps/client/src/data apps/server/src -name "*.js" -type f -delete 2>/dev/null || true
 RUN pnpm --filter shared build
 
 # ---- runtime ----
