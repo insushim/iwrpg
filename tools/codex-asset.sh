@@ -21,7 +21,7 @@ while [[ $# -gt 0 ]]; do
     --output)     OUTPUT="$2"; shift 2;;
     --resolution) RESOLUTION="$2"; shift 2;;
     --reference)  REFERENCE="$2"; shift 2;;
-    --thinking)   THINKING="--high"; shift 1;;
+    --thinking)   THINKING=""; shift 1;;  # codex CLI 0.125 has no --high; fall back to default mode
     --grid)       GRID="$2"; shift 2;;
     *) echo "Unknown arg: $1"; shift;;
   esac
@@ -33,6 +33,12 @@ if [ -z "$PROMPT" ] || [ -z "$OUTPUT" ]; then
 fi
 
 mkdir -p "$(dirname "$OUTPUT")"
+
+# Skip if already generated (idempotent re-runs)
+if [ -s "$OUTPUT" ]; then
+  echo "⏭️  Skip (exists): $OUTPUT ($(stat -f%z "$OUTPUT" 2>/dev/null || stat -c%s "$OUTPUT") bytes)"
+  exit 0
+fi
 
 # Build instruction string for codex CLI
 INSTRUCTION="\$imagegen 다음 조건으로 이미지 1장 생성 후 저장.

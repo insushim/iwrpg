@@ -258,7 +258,11 @@ export class WorldScene extends Phaser.Scene {
   private makePlayerSprite(player: any, isMe: boolean): PlayerSprite {
     const c = this.add.container(player.x * TILE_SIZE + TILE_SIZE/2, player.y * TILE_SIZE + TILE_SIZE/2);
     const body = this.add.image(0, 0, `char_${player.classId}`);
-    body.setScale(1.0);
+    // Auto-scale: codex art is 256+px while procedural placeholder is 32×32. Normalize to ~32×32 footprint.
+    const tex = this.textures.get(`char_${player.classId}`).getSourceImage() as any;
+    const w = tex?.width ?? 32;
+    body.setScale(w > 64 ? 32 / w : 1.0);
+    body.setOrigin(0.5, 0.7);
     const label = this.add.text(0, -22, player.name + (isMe ? ' ✦' : ''), {
       fontFamily: 'Noto Sans KR, sans-serif',
       fontSize: '11px',
@@ -273,8 +277,13 @@ export class WorldScene extends Phaser.Scene {
 
   private makeMonsterSprite(m: any, key: string): MonsterSprite {
     const c = this.add.container(m.x * TILE_SIZE + TILE_SIZE/2, m.y * TILE_SIZE + TILE_SIZE/2);
-    const tier = m.isBoss ? 'boss' : m.isNamed ? 'named' : 't1';
-    const body = this.add.image(0, 0, `mon_${tier}`).setScale(m.isBoss ? 1.6 : m.isNamed ? 1.3 : 1.0);
+    const tier = m.isBoss ? 'boss' : m.isNamed ? 'named' : `t${m.tier ?? 1}`;
+    const body = this.add.image(0, 0, `mon_${tier}`);
+    const tex = this.textures.get(`mon_${tier}`).getSourceImage() as any;
+    const w = tex?.width ?? 28;
+    const baseScale = w > 64 ? 32 / w : 1.0;
+    body.setScale(baseScale * (m.isBoss ? 1.8 : m.isNamed ? 1.3 : 1.0));
+    body.setOrigin(0.5, 0.7);
     c.add(body);
     return { container: c, body };
   }

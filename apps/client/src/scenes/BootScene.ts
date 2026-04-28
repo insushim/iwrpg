@@ -17,17 +17,28 @@ export class BootScene extends Phaser.Scene {
 
     this.load.on('progress', (p: number) => { bar.width = 318 * p; });
 
-    // Try to load real assets — if they exist
-    // (codex CLI will populate these later — for now we generate placeholder textures programmatically)
-    this.load.image('bg_aurora_town', 'assets/img/tiles/aurora_town_bg.png');
-    this.load.image('player_aether-lord', 'assets/img/characters/aether_lord_concept.png');
-    this.load.image('player_iron-sentinel', 'assets/img/characters/iron_sentinel_concept.png');
-    this.load.image('player_sylvan-ranger', 'assets/img/characters/sylvan_ranger_concept.png');
-    this.load.image('player_rune-weaver', 'assets/img/characters/rune_weaver_concept.png');
+    // === Real codex-generated assets (load first; placeholder fallback if 404) ===
+    // Characters: idle frame as the main sprite
+    this.load.image('char_aether-lord', 'assets/img/characters/aether_lord/idle_0.png');
+    this.load.image('char_iron-sentinel', 'assets/img/characters/iron_sentinel/idle_0.png');
+    this.load.image('char_sylvan-ranger', 'assets/img/characters/sylvan_ranger/idle_0.png');
+    this.load.image('char_rune-weaver', 'assets/img/characters/rune_weaver/idle_0.png');
+
+    // Monsters: pick representative sprite per tier
+    this.load.image('mon_t1', 'assets/img/monsters/tier12_0.png');
+    this.load.image('mon_t2', 'assets/img/monsters/tier12_4.png');
+    this.load.image('mon_t3', 'assets/img/monsters/tier3_0.png');
+    this.load.image('mon_t4', 'assets/img/monsters/tier4_0.png');
+    this.load.image('mon_t5', 'assets/img/monsters/tier5_0.png');
+    this.load.image('mon_named', 'assets/img/monsters/tier4_3.png');
+    this.load.image('mon_boss', 'assets/img/monsters/tier5_5.png');
+
+    // UI
+    this.load.image('ui_panel', 'assets/img/ui/panel_9slice.png');
 
     // Mark loaders as optional (don't error on 404)
     this.load.on('loaderror', (file: any) => {
-      console.warn('[BootScene] missing asset:', file.key, '— will use procedural placeholder');
+      console.warn('[BootScene] missing asset:', file.key, '— procedural fallback');
     });
   }
 
@@ -38,7 +49,7 @@ export class BootScene extends Phaser.Scene {
 
   /** Generate procedural placeholder textures so the game can run before codex assets arrive. */
   private generatePlaceholderTextures() {
-    // Tile (32x32 grass for towns, dirt for fields)
+    // Tiles always procedural (32×32 mosaic — codex tilesets are 1024×1024 atlases, used differently)
     this.makeColorTile('tile_grass', 0x2D4F30, 0x3A6240);
     this.makeColorTile('tile_dirt', 0x5C3D24, 0x4A2D1A);
     this.makeColorTile('tile_stone', 0x4A4F58, 0x363B43);
@@ -46,20 +57,20 @@ export class BootScene extends Phaser.Scene {
     this.makeColorTile('tile_wood', 0x4A2C19, 0x3A2010);
     this.makeColorTile('tile_marble', 0xE5E1D5, 0xCFCBC0);
 
-    // Character placeholders by class — simple colored circles with class initial
-    this.makeCharSprite('char_aether-lord', 0x4F46E5, 'A');
-    this.makeCharSprite('char_iron-sentinel', 0x78716C, 'I');
-    this.makeCharSprite('char_sylvan-ranger', 0x059669, 'S');
-    this.makeCharSprite('char_rune-weaver', 0x9333EA, 'R');
+    // Character placeholder — only if real codex art failed to load
+    if (!this.textures.exists('char_aether-lord')) this.makeCharSprite('char_aether-lord', 0x4F46E5, 'A');
+    if (!this.textures.exists('char_iron-sentinel')) this.makeCharSprite('char_iron-sentinel', 0x78716C, 'I');
+    if (!this.textures.exists('char_sylvan-ranger')) this.makeCharSprite('char_sylvan-ranger', 0x059669, 'S');
+    if (!this.textures.exists('char_rune-weaver')) this.makeCharSprite('char_rune-weaver', 0x9333EA, 'R');
 
-    // Monster placeholder colors by tier
-    this.makeMonsterSprite('mon_t1', 0x84CC16);
-    this.makeMonsterSprite('mon_t2', 0x06B6D4);
-    this.makeMonsterSprite('mon_t3', 0xF59E0B);
-    this.makeMonsterSprite('mon_t4', 0xE11D48);
-    this.makeMonsterSprite('mon_t5', 0x7E22CE);
-    this.makeMonsterSprite('mon_named', 0xFCD34D);
-    this.makeMonsterSprite('mon_boss', 0xF97316);
+    // Monster placeholder — only if real codex sprite failed
+    if (!this.textures.exists('mon_t1')) this.makeMonsterSprite('mon_t1', 0x84CC16);
+    if (!this.textures.exists('mon_t2')) this.makeMonsterSprite('mon_t2', 0x06B6D4);
+    if (!this.textures.exists('mon_t3')) this.makeMonsterSprite('mon_t3', 0xF59E0B);
+    if (!this.textures.exists('mon_t4')) this.makeMonsterSprite('mon_t4', 0xE11D48);
+    if (!this.textures.exists('mon_t5')) this.makeMonsterSprite('mon_t5', 0x7E22CE);
+    if (!this.textures.exists('mon_named')) this.makeMonsterSprite('mon_named', 0xFCD34D);
+    if (!this.textures.exists('mon_boss')) this.makeMonsterSprite('mon_boss', 0xF97316);
 
     // NPC marker
     this.makeCharSprite('npc_default', 0xFBBF24, 'N');
