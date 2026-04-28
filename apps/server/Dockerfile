@@ -24,7 +24,9 @@ RUN pnpm --filter shared build
 # ---- runtime ----
 FROM base AS runtime
 ENV NODE_ENV=production
-ENV PORT=8080
+# Allow more heap for tsx's runtime ESM transform on Render's 512MB free tier
+ENV NODE_OPTIONS="--max-old-space-size=448"
+# PORT is injected by the host (Render/Fly). Default to 8080 only if missing.
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/packages ./packages
 COPY --from=build /app/apps/server ./apps/server

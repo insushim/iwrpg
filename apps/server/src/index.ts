@@ -1,4 +1,5 @@
 // Server entry point — Express HTTP + Colyseus WebSocket transport.
+console.log('[boot] starting Runeword Chronicle server, importing modules...');
 
 import 'dotenv/config';
 import express from 'express';
