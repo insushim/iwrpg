@@ -1,0 +1,32 @@
+# Render Blueprint — Runeword Chronicle Colyseus server
+# https://render.com/docs/blueprint-spec
+#
+# How to deploy:
+#   1) Push this repo to GitHub
+#   2) https://dashboard.render.com/blueprints → "New Blueprint" → 이 저장소 선택
+#   3) Render가 render.yaml을 읽고 서비스를 자동 생성합니다
+#   4) Free plan은 카드 등록 불필요 (15분 idle 시 슬립, 다음 접속 ~30초 부팅)
+
+services:
+  - type: web
+    name: runeword-chronicle-server
+    runtime: docker
+    plan: free
+    region: singapore   # 한국에서 가장 가까운 free 리전
+    dockerfilePath: ./apps/server/Dockerfile
+    dockerContext: .
+    healthCheckPath: /health
+    autoDeploy: true    # main 브랜치 push 시 재배포
+
+    envVars:
+      - key: NODE_ENV
+        value: production
+      # PORT — Render가 자동 주입 (보통 10000). Dockerfile은 process.env.PORT를 읽음.
+      - key: ALLOWED_ORIGINS
+        value: "*"        # 일단 와일드카드, Vercel URL 받으면 잠금
+      - key: MONITOR_USER
+        value: teacher
+      - key: MONITOR_PASS
+        generateValue: true   # Render가 자동 생성, dashboard에서 확인
+      - key: JWT_SECRET
+        generateValue: true
