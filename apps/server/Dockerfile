@@ -1,7 +1,7 @@
 # Runeword Chronicle — Colyseus server
 # Multi-stage to keep the runtime image small. Workspace-aware (pnpm + monorepo).
 
-FROM node:22-alpine AS base
+FROM node:22-slim AS base
 WORKDIR /app
 RUN corepack enable && corepack prepare pnpm@10.0.0 --activate
 
@@ -37,6 +37,5 @@ COPY --from=build /app/pnpm-workspace.yaml /app/package.json /app/tsconfig.base.
 
 WORKDIR /app/apps/server
 EXPOSE 8080
-HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
-  CMD wget -qO- http://localhost:${PORT}/health || exit 1
+# Render runs its own healthCheckPath probe; Docker HEALTHCHECK is redundant and slim has no wget.
 CMD ["pnpm", "start"]
