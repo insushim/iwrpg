@@ -36,6 +36,28 @@ export class BootScene extends Phaser.Scene {
     // UI
     this.load.image('ui_panel', 'assets/img/ui/panel_9slice.png');
 
+    // === Priority-2: village buildings ===
+    this.load.image('bld_house', 'assets/img/scenery/building_house.png');
+    this.load.image('bld_shop', 'assets/img/scenery/building_shop.png');
+    this.load.image('bld_inn', 'assets/img/scenery/building_inn.png');
+    this.load.image('bld_smith', 'assets/img/scenery/building_smith.png');
+    this.load.image('bld_temple', 'assets/img/scenery/building_temple.png');
+    this.load.image('bld_bank', 'assets/img/scenery/building_bank.png');
+    this.load.image('bld_gacha', 'assets/img/scenery/building_gacha.png');
+    this.load.image('bld_fountain', 'assets/img/scenery/building_fountain.png');
+
+    // === Priority-2: Aurora Town NPC sprites ===
+    for (let i = 0; i < 12; i++) {
+      this.load.image(`npc_aurora_${i}`, `assets/img/npcs/aurora_npc_${i}.png`);
+    }
+
+    // === Character 8-direction walk frames (loaded for animation) ===
+    for (const cls of ['aether_lord', 'iron_sentinel', 'sylvan_ranger', 'rune_weaver']) {
+      for (let i = 0; i < 8; i++) {
+        this.load.image(`char_${cls}_walk_${i}`, `assets/img/characters/${cls}/walk8_${i}.png`);
+      }
+    }
+
     // Mark loaders as optional (don't error on 404)
     this.load.on('loaderror', (file: any) => {
       console.warn('[BootScene] missing asset:', file.key, '— procedural fallback');

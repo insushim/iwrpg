@@ -12,7 +12,39 @@ interface PlayerSprite {
   body: Phaser.GameObjects.Image;
   label: Phaser.GameObjects.Text;
   isMe: boolean;
+  lastX: number;
+  lastY: number;
+  classId: string;
 }
+
+// 8-direction frame index (matches codex 4×2 atlas: row1=s/se/e/ne, row2=n/nw/w/sw)
+function dirToFrame(dx: number, dy: number): number {
+  if (dy > 0 && dx === 0) return 0;  // s
+  if (dy > 0 && dx > 0) return 1;    // se
+  if (dy === 0 && dx > 0) return 2;  // e
+  if (dy < 0 && dx > 0) return 3;    // ne
+  if (dy < 0 && dx === 0) return 4;  // n
+  if (dy < 0 && dx < 0) return 5;    // nw
+  if (dy === 0 && dx < 0) return 6;  // w
+  if (dy > 0 && dx < 0) return 7;    // sw
+  return -1; // idle
+}
+
+// NPC id → atlas frame index (matches codex aurora_town atlas order)
+const AURORA_NPC_FRAME: Record<string, number> = {
+  npc_aurora_merchant_lina: 0,
+  npc_aurora_smith_dorgan: 1,
+  npc_aurora_priest_mirelle: 2,
+  npc_aurora_quest_baren: 3,
+  npc_aurora_innkeeper_haru: 4,
+  npc_aurora_guard_kael: 5,
+  npc_aurora_guard_renn: 6,
+  npc_aurora_bard_seon: 7,
+  npc_aurora_banker_milos: 8,
+  npc_aurora_scholar_aleth: 9,
+  npc_aurora_transformer_vael: 10,
+  npc_aurora_gacha_selevis: 11,
+};
 interface MonsterSprite {
   container: Phaser.GameObjects.Container;
   body: Phaser.GameObjects.Image;
@@ -67,12 +99,24 @@ export class WorldScene extends Phaser.Scene {
         this.cameras.main.startFollow(sprite.container, true, 0.1, 0.1);
         this.cameras.main.setBounds(0, 0, this.mapWidth * TILE_SIZE, this.mapHeight * TILE_SIZE);
       }
-      // Position updates
+      // Position + 8-dir walk frame
       $(player).onChange(() => {
+        const dx = Math.sign(player.x - sprite.lastX);
+        const dy = Math.sign(player.y - sprite.lastY);
         sprite.container.setPosition(
           player.x * TILE_SIZE + TILE_SIZE / 2,
           player.y * TILE_SIZE + TILE_SIZE / 2
         );
+        const dir = dirToFrame(dx, dy);
+        if (dir >= 0) {
+          const walkKey = `char_${sprite.classId}_walk_${dir}`;
+          if (this.textures.exists(walkKey)) sprite.body.setTexture(walkKey);
+        } else {
+          const idleKey = `char_${sprite.classId}`;
+          if (this.textures.exists(idleKey)) sprite.body.setTexture(idleKey);
+        }
+        sprite.lastX = player.x;
+        sprite.lastY = player.y;
       });
     });
     $(room.state).players.onRemove((_player: any, key: string) => {
@@ -279,7 +323,7 @@ export class WorldScene extends Phaser.Scene {
     }).setOrigin(0.5);
     c.add([body, label]);
     if (isMe) c.setDepth(100);
-    return { container: c, body, label, isMe };
+    return { container: c, body, label, isMe, lastX: player.x, lastY: player.y, classId: player.classId };
   }
 
   private makeMonsterSprite(m: any, key: string): MonsterSprite {
@@ -335,19 +379,42 @@ export class WorldScene extends Phaser.Scene {
     };
 
     if (map.is_safe_zone || mapId.includes('town') || mapId.includes('haven')) {
-      // Town layout: fountain center + buildings around NPC locations + decorative trees on edges
+      // Town layout: fountain center + codex-illustrated buildings near NPCs + edge trees
       const cx = Math.floor(W / 2), cy = Math.floor(H / 2);
-      place('scenery_fountain', cx, cy, 5);
-      // Buildings: place near NPC locations (each NPC gets a house behind them)
+      // Big fountain (uses codex bld_fountain if available, else procedural)
+      const fkey = this.textures.exists('bld_fountain') ? 'bld_fountain' : 'scenery_fountain';
+      const fsize = this.textures.exists('bld_fountain') ? 4 : 1;  // large illustration occupies more tiles visually
+      const fountain = this.add.image(cx * TILE_SIZE + TILE_SIZE / 2, cy * TILE_SIZE + TILE_SIZE / 2, fkey)
+        .setOrigin(0.5, 0.85).setDepth(5);
+      if (fkey === 'bld_fountain') fountain.setScale(2.0 * TILE_SIZE / 1024 * fsize);
+      this.tileLayer.add(fountain);
+      // Buildings: codex illustrations mapped by NPC role
       for (const loc of map.npc_locations ?? []) {
-        const bx = loc.x;
-        const by = Math.max(2, loc.y - 2);
         const id = loc.id;
-        const key = id.includes('innkeeper') ? 'scenery_inn'
-          : id.includes('merchant') || id.includes('smith') || id.includes('banker') || id.includes('gacha') ? 'scenery_shop'
+        const codexKey = id.includes('innkeeper') ? 'bld_inn'
+          : id.includes('smith') ? 'bld_smith'
+          : id.includes('priest') ? 'bld_temple'
+          : id.includes('banker') ? 'bld_bank'
+          : id.includes('gacha') || id.includes('transformer') ? 'bld_gacha'
+          : id.includes('merchant') ? 'bld_shop'
+          : 'bld_house';
+        const useReal = this.textures.exists(codexKey);
+        const procFallback = id.includes('innkeeper') ? 'scenery_inn'
           : id.includes('priest') || id.includes('scholar') ? 'scenery_temple'
+          : id.includes('merchant') || id.includes('smith') || id.includes('banker') || id.includes('gacha') ? 'scenery_shop'
           : 'scenery_house';
-        place(key, bx, by, 3);
+        const finalKey = useReal ? codexKey : procFallback;
+        const bx = loc.x;
+        const by = Math.max(3, loc.y - 3);
+        const img = this.add.image(bx * TILE_SIZE + TILE_SIZE / 2, by * TILE_SIZE + TILE_SIZE / 2, finalKey)
+          .setOrigin(0.5, 0.85).setDepth(3);
+        if (useReal) {
+          // Codex illustrations are 1024×1024 — scale to ~3×3 tile footprint
+          const tex = this.textures.get(finalKey).getSourceImage() as any;
+          const w = tex?.width ?? 1024;
+          img.setScale(3 * TILE_SIZE / w);
+        }
+        this.tileLayer.add(img);
       }
       // Banner pairs near town gates / center
       for (let i = 0; i < 6; i++) {
@@ -419,8 +486,17 @@ export class WorldScene extends Phaser.Scene {
       const cx = loc.x * TILE_SIZE + TILE_SIZE / 2;
       const cy = loc.y * TILE_SIZE + TILE_SIZE / 2;
       const c = this.add.container(cx, cy);
-      // Body — golden circle for NPCs (procedural placeholder until codex NPC sprites generated)
-      const body = this.add.image(0, 0, 'npc_default').setScale(1.0).setOrigin(0.5, 0.7);
+      // Real codex NPC sprite if available (Aurora town atlas), else fallback placeholder
+      const frame = AURORA_NPC_FRAME[loc.id];
+      const codexKey = frame !== undefined ? `npc_aurora_${frame}` : '';
+      const useReal = codexKey && this.textures.exists(codexKey);
+      const finalKey = useReal ? codexKey : 'npc_default';
+      const body = this.add.image(0, 0, finalKey).setOrigin(0.5, 0.78);
+      if (useReal) {
+        const tex = this.textures.get(finalKey).getSourceImage() as any;
+        const w = tex?.width ?? 256;
+        body.setScale(48 / w);
+      }
       // Name plate
       const name = def?.name_ko ?? loc.id;
       const label = this.add.text(0, -22, '✦ ' + name, {
