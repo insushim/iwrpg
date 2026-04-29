@@ -131,17 +131,39 @@ export class WorldRoom extends Room<WorldState> {
     client.send('inventory_update', { entries: this.playerInventories.get(player.id) });
   }
 
-  onLeave(client: Client, consented: boolean) {
-    // Find player by sessionId
+  async onLeave(client: Client, consented: boolean) {
+    let foundPid = '';
+    let foundPlayer: any = null;
     for (const [pid, p] of this.state.players.entries()) {
       if (p.sessionId === client.sessionId) {
-        this.state.players.delete(pid);
-        this.quiz.cleanupPlayer(pid);
-        this.gacha.cleanupPlayer(pid);
-        this.playerInventories.delete(pid);
-        console.log(`[WorldRoom ${this.mapId}] -${p.name}`);
+        foundPid = pid;
+        foundPlayer = p;
         break;
       }
+    }
+    if (!foundPlayer) return;
+
+    const cleanup = () => {
+      this.state.players.delete(foundPid);
+      this.quiz.cleanupPlayer(foundPid);
+      this.gacha.cleanupPlayer(foundPid);
+      this.playerInventories.delete(foundPid);
+    };
+
+    if (consented) {
+      cleanup();
+      console.log(`[WorldRoom ${this.mapId}] -${foundPlayer.name} (consented)`);
+      return;
+    }
+    // Network drop: hold the player record for 60s for reconnection
+    console.log(`[WorldRoom ${this.mapId}] ${foundPlayer.name} dropped, awaiting reconnect…`);
+    try {
+      const newClient = await this.allowReconnection(client, 60);
+      foundPlayer.sessionId = newClient.sessionId;
+      console.log(`[WorldRoom ${this.mapId}] ${foundPlayer.name} reconnected`);
+    } catch {
+      cleanup();
+      console.log(`[WorldRoom ${this.mapId}] -${foundPlayer.name} (timeout)`);
     }
   }
 

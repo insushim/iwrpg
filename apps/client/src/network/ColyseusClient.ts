@@ -53,13 +53,21 @@ export class NetClient {
     if (this.reconnecting) return;
     this.reconnecting = true;
     this.onDisconnected?.();
+    const token = this.worldRoom?.reconnectionToken;
     let attempt = 0;
     while (attempt < 6 && this.charPayload) {
       const delay = Math.min(1000 * Math.pow(2, attempt), 8000);
       await new Promise(r => setTimeout(r, delay));
       try {
-        console.log(`[NetClient] reconnect attempt ${attempt + 1} → ${this.currentMap}`);
-        this.worldRoom = await this.client.joinOrCreate(`world_${this.currentMap}`, this.charPayload);
+        if (token && attempt === 0) {
+          // First try: use Colyseus reconnection (preserves player state on server)
+          console.log('[NetClient] reconnecting with token…');
+          this.worldRoom = await (this.client as any).reconnect(token);
+        } else {
+          // Fallback: fresh join
+          console.log(`[NetClient] reconnect attempt ${attempt + 1} → ${this.currentMap}`);
+          this.worldRoom = await this.client.joinOrCreate(`world_${this.currentMap}`, this.charPayload);
+        }
         this.installLifecycle();
         this.startHeartbeat();
         this.reconnecting = false;

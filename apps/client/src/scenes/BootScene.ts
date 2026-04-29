@@ -85,9 +85,15 @@ export class BootScene extends Phaser.Scene {
       for (let i = 0; i < 4; i++) {
         this.load.image(`char_${cls}_atk_${i}`, `assets/img/characters/${dir}/atk_${i}.png`);
       }
-      // P9: 32-frame walk cycle (8 directions × 4 frames each)
+      // P9: 32-frame walk cycle (8 directions × 4 frames each) — used if generated
       for (let i = 0; i < 32; i++) {
         this.load.image(`char_${cls}_walk32_${i}`, `assets/img/characters/${dir}/walk32_${i}.png`);
+      }
+      // P10: 3-direction walk atlas (front/side/back × 4 frames) — primary anim source
+      for (const row of ['front', 'side', 'back']) {
+        for (let i = 0; i < 4; i++) {
+          this.load.image(`char_${cls}_walk_${row}_${i}`, `assets/img/characters/${dir}/walk_${row}_${i}.png`);
+        }
       }
     }
 

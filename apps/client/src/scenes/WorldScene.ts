@@ -21,6 +21,22 @@ interface PlayerSprite {
   lastFrameAt: number; // ms timestamp of last frame swap
 }
 
+// Map 8-direction index → 3 walk-atlas rows (front/side/back) + flipX
+// Used by P10 walk atlases (4×3 grid: row1=front, row2=side facing right, row3=back)
+function dirToWalkRow(dir: number): { row: 'front' | 'side' | 'back'; flipX: boolean } {
+  switch (dir) {
+    case 0: return { row: 'front', flipX: false }; // S
+    case 1: return { row: 'front', flipX: false }; // SE
+    case 7: return { row: 'front', flipX: true };  // SW (mirror front)
+    case 2: return { row: 'side',  flipX: false }; // E
+    case 3: return { row: 'side',  flipX: false }; // NE (use side; close enough)
+    case 6: return { row: 'side',  flipX: true };  // W
+    case 5: return { row: 'side',  flipX: true };  // NW
+    case 4: return { row: 'back',  flipX: false }; // N
+    default: return { row: 'front', flipX: false };
+  }
+}
+
 // 8-direction frame index (matches codex 4×2 atlas: row1=s/se/e/ne, row2=n/nw/w/sw)
 function dirToFrame(dx: number, dy: number): number {
   if (dy > 0 && dx === 0) return 0;  // s
@@ -111,6 +127,15 @@ export class WorldScene extends Phaser.Scene {
     this.renderScenery(initialMap);
     this.renderNPCs(initialMap);
     this.renderPortals(initialMap);
+
+    // Re-bind on reconnect (server preserves state via allowReconnection)
+    NetClient.inst.onReconnected = () => {
+      console.log('[WorldScene] reconnected — restarting scene');
+      this.scene.restart();
+    };
+    NetClient.inst.onDisconnected = () => {
+      console.warn('[WorldScene] disconnected — attempting reconnect');
+    };
   }
 
   private bindNetwork() {
@@ -356,31 +381,37 @@ export class WorldScene extends Phaser.Scene {
     for (const sprite of this.players.values()) {
       const cls = sprite.classId;
       const isMoving = (now - sprite.lastWalkAt) < 350;
+      const { row, flipX } = dirToWalkRow(sprite.dir);
+      sprite.body.setFlipX(flipX);
       if (isMoving) {
-        if (now - sprite.lastFrameAt > 140) {
+        if (now - sprite.lastFrameAt > 150) {
           sprite.walkFrame = (sprite.walkFrame + 1) % 4;
           sprite.lastFrameAt = now;
         }
-        // Try walk32 first (8 dir × 4 frames). Fallback to walk_{dir} (8 dir × 1 frame). Final fallback to idle.
-        const w32Key = `char_${cls}_walk32_${sprite.dir * 4 + sprite.walkFrame}`;
-        if (this.textures.exists(w32Key)) {
-          sprite.body.setTexture(w32Key);
-          continue;
-        }
-        const wKey = `char_${cls}_walk_${sprite.dir}`;
+        // Primary: P10 walk_{front/side/back}_{0..3}
+        const wKey = `char_${cls}_walk_${row}_${sprite.walkFrame}`;
         if (this.textures.exists(wKey)) {
           sprite.body.setTexture(wKey);
           continue;
         }
-      } else {
-        // idle: snap to frame 0 of current direction (or default idle)
-        const w32Idle = `char_${cls}_walk32_${sprite.dir * 4}`;
-        if (this.textures.exists(w32Idle)) {
-          sprite.body.setTexture(w32Idle);
+        // Fallback: walk_{dir} 1-frame (no animation but at least direction)
+        const fallbackKey = `char_${cls}_walk_${sprite.dir}`;
+        if (this.textures.exists(fallbackKey)) {
+          sprite.body.setTexture(fallbackKey);
           continue;
         }
+        // Final fallback: idle
         const idleKey = `char_${cls}`;
         if (this.textures.exists(idleKey)) sprite.body.setTexture(idleKey);
+      } else {
+        // Idle: standing pose (frame 0) of last facing direction
+        const idleKey = `char_${cls}_walk_${row}_0`;
+        if (this.textures.exists(idleKey)) {
+          sprite.body.setTexture(idleKey);
+          continue;
+        }
+        const fallbackIdle = `char_${cls}`;
+        if (this.textures.exists(fallbackIdle)) sprite.body.setTexture(fallbackIdle);
       }
     }
   }
@@ -513,14 +544,17 @@ export class WorldScene extends Phaser.Scene {
       if (fkey === 'bld_fountain') {
         const tex = this.textures.get(fkey).getSourceImage() as any;
         const w = tex?.width ?? 1024;
-        // Fountain ~10 tiles wide
-        fountain.setScale(10 * TILE_SIZE / w);
+        // Fountain ~8 tiles wide (was 10 — too big, overlapping nearby buildings)
+        fountain.setScale(8 * TILE_SIZE / w);
       }
       this.tileLayer.add(fountain);
       // Buildings: codex illustrations mapped by NPC role
-      // Track placed building cells to avoid overlap
+      // Track placed building cells to avoid overlap (each building ~7 tiles wide × 8 tall)
       const placedBuildings: Array<{ x: number; y: number }> = [];
-      const minBuildingDistance = 7; // tiles
+      // Reserve fountain area as a "placed" item so buildings can't overlap it (fountain ~10 tiles)
+      placedBuildings.push({ x: cx, y: cy });
+      const minBuildingX = 10; // horizontal min distance
+      const minBuildingY = 8;  // vertical min distance
       for (const loc of map.npc_locations ?? []) {
         const id = loc.id;
         const codexKey = id.includes('innkeeper') ? 'bld_inn'
@@ -536,15 +570,28 @@ export class WorldScene extends Phaser.Scene {
           : id.includes('merchant') || id.includes('smith') || id.includes('banker') || id.includes('gacha') ? 'scenery_shop'
           : 'scenery_house';
         const finalKey = useReal ? codexKey : procFallback;
-        // Find nearest non-overlapping spot above the NPC
+        // Find nearest non-overlapping spot above the NPC, search in a spiral
         let bx = loc.x;
-        let by = Math.max(3, loc.y - 4);
+        let by = Math.max(4, loc.y - 5);
         let attempts = 0;
-        while (attempts < 8) {
-          const overlap = placedBuildings.some(p => Math.abs(p.x - bx) < minBuildingDistance && Math.abs(p.y - by) < 5);
-          if (!overlap) break;
-          // Shift sideways
-          bx += (attempts % 2 === 0 ? 1 : -1) * (Math.floor(attempts / 2) + 1) * 2;
+        const initialBx = bx;
+        const initialBy = by;
+        while (attempts < 24) {
+          const overlap = placedBuildings.some(p =>
+            Math.abs(p.x - bx) < minBuildingX && Math.abs(p.y - by) < minBuildingY
+          );
+          if (!overlap && bx > 4 && bx < W - 4 && by > 4 && by < H - 4) break;
+          // Spiral search: alternate sides + grow radius
+          const step = Math.floor(attempts / 2) + 1;
+          const sign = (attempts % 2 === 0 ? 1 : -1);
+          if (attempts < 12) {
+            bx = initialBx + sign * step * 2; // horizontal first
+            by = initialBy;
+          } else {
+            // After 6 horizontal attempts, also try moving up
+            bx = initialBx + sign * (Math.floor((attempts - 12) / 2) + 1) * 2;
+            by = Math.max(4, initialBy - 4);
+          }
           attempts++;
         }
         placedBuildings.push({ x: bx, y: by });
@@ -553,7 +600,8 @@ export class WorldScene extends Phaser.Scene {
         if (useReal) {
           const tex = this.textures.get(finalKey).getSourceImage() as any;
           const w = tex?.width ?? 1024;
-          img.setScale(6 * TILE_SIZE / w);
+          // Building ~5 tiles wide (was 6 — caused overlap; tighter spacing now)
+          img.setScale(5 * TILE_SIZE / w);
         }
         // Make building interactive — click → talk to associated NPC
         img.setInteractive({ useHandCursor: true });
