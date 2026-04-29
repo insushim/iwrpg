@@ -428,10 +428,14 @@ export class WorldScene extends Phaser.Scene {
       const cx = Math.floor(W / 2), cy = Math.floor(H / 2);
       // Big fountain (uses codex bld_fountain if available, else procedural)
       const fkey = this.textures.exists('bld_fountain') ? 'bld_fountain' : 'scenery_fountain';
-      const fsize = this.textures.exists('bld_fountain') ? 4 : 1;  // large illustration occupies more tiles visually
       const fountain = this.add.image(cx * TILE_SIZE + TILE_SIZE / 2, cy * TILE_SIZE + TILE_SIZE / 2, fkey)
-        .setOrigin(0.5, 0.85).setDepth(5);
-      if (fkey === 'bld_fountain') fountain.setScale(2.0 * TILE_SIZE / 1024 * fsize);
+        .setOrigin(0.5, 0.5).setDepth(5);
+      if (fkey === 'bld_fountain') {
+        const tex = this.textures.get(fkey).getSourceImage() as any;
+        const w = tex?.width ?? 1024;
+        // Fountain ~10 tiles wide
+        fountain.setScale(10 * TILE_SIZE / w);
+      }
       this.tileLayer.add(fountain);
       // Buildings: codex illustrations mapped by NPC role
       for (const loc of map.npc_locations ?? []) {
@@ -454,11 +458,16 @@ export class WorldScene extends Phaser.Scene {
         const img = this.add.image(bx * TILE_SIZE + TILE_SIZE / 2, by * TILE_SIZE + TILE_SIZE / 2, finalKey)
           .setOrigin(0.5, 0.85).setDepth(3);
         if (useReal) {
-          // Codex illustrations are 1024×1024 — scale to ~3×3 tile footprint
           const tex = this.textures.get(finalKey).getSourceImage() as any;
           const w = tex?.width ?? 1024;
-          img.setScale(3 * TILE_SIZE / w);
+          img.setScale(6 * TILE_SIZE / w);
         }
+        // Make building interactive — click → talk to associated NPC
+        img.setInteractive({ useHandCursor: true });
+        img.on('pointerdown', (p: Phaser.Input.Pointer) => {
+          p.event.stopPropagation();
+          NetClient.inst.send('npc_interact', { npcId: id });
+        });
         this.tileLayer.add(img);
       }
       // Banner pairs near town gates / center
@@ -546,7 +555,9 @@ export class WorldScene extends Phaser.Scene {
       if (useReal) {
         const tex = this.textures.get(finalKey).getSourceImage() as any;
         const w = tex?.width ?? 256;
-        body.setScale(48 / w);
+        body.setScale(80 / w); // bigger NPC sprite (was 48 → too small)
+      } else {
+        body.setScale(1.4); // bigger placeholder circle as fallback
       }
       // Name plate
       const name = def?.name_ko ?? loc.id;
@@ -567,6 +578,13 @@ export class WorldScene extends Phaser.Scene {
       }).setOrigin(0.5);
       this.tweens.add({ targets: hint, y: -42, yoyo: true, repeat: -1, duration: 700, ease: 'Sine.inOut' });
       c.add([body, label, hint]);
+      // Click NPC → talk
+      body.setInteractive({ useHandCursor: true });
+      const npcId = loc.id;
+      body.on('pointerdown', (p: Phaser.Input.Pointer) => {
+        p.event.stopPropagation();
+        NetClient.inst.send('npc_interact', { npcId });
+      });
     }
   }
 
@@ -603,14 +621,30 @@ export class WorldScene extends Phaser.Scene {
       : mapId.includes('drake') || mapId.includes('pyre') ? 'tile_dirt'
       : 'tile_dirt';
 
+    // Pseudo-random variant pick (deterministic per tile so layout is stable)
+    const variantPick = (x: number, y: number, baseKey: string): string => {
+      const h = (x * 374761393 + y * 668265263) ^ 0x9e3779b9;
+      const v = ((h >>> 0) % 3);
+      return v === 0 ? baseKey : `${baseKey}_v${v}`;
+    };
     for (let y = 0; y < this.mapHeight; y++) {
       for (let x = 0; x < this.mapWidth; x++) {
-        // Roads in towns
         let key = tileKey;
         if (mapId.includes('town')) {
-          if (x === Math.floor(this.mapWidth / 2) || y === Math.floor(this.mapHeight / 2)) key = 'tile_stone';
+          // 3-tile wide stone roads with 1-tile dirt buffer for natural transition
+          const cx = Math.floor(this.mapWidth / 2);
+          const cy = Math.floor(this.mapHeight / 2);
+          const dx = Math.abs(x - cx);
+          const dy = Math.abs(y - cy);
+          if (dx <= 1 || dy <= 1) key = 'tile_stone';
+          else if (dx === 2 || dy === 2) key = 'tile_dirt';
+        } else if (mapId.includes('field') || mapId.includes('meadow')) {
+          // Winding diagonal dirt path
+          if (Math.abs((x + y) % 14 - 7) <= 1) key = 'tile_dirt';
         }
-        const t = this.add.image(x * TILE_SIZE + TILE_SIZE/2, y * TILE_SIZE + TILE_SIZE/2, key);
+        const finalKey = variantPick(x, y, key);
+        const useKey = this.textures.exists(finalKey) ? finalKey : key;
+        const t = this.add.image(x * TILE_SIZE + TILE_SIZE/2, y * TILE_SIZE + TILE_SIZE/2, useKey);
         this.tileLayer.add(t);
       }
     }

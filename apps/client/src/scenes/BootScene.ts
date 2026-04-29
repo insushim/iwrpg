@@ -62,12 +62,14 @@ export class BootScene extends Phaser.Scene {
     }
 
     // === Character 8-direction walk + 4-frame attack ===
-    for (const cls of ['aether_lord', 'iron_sentinel', 'sylvan_ranger', 'rune_weaver']) {
+    // classId uses hyphen (aether-lord) but file paths use underscore (aether_lord/...)
+    for (const cls of ['aether-lord', 'iron-sentinel', 'sylvan-ranger', 'rune-weaver']) {
+      const dir = cls.replace(/-/g, '_'); // directory name
       for (let i = 0; i < 8; i++) {
-        this.load.image(`char_${cls}_walk_${i}`, `assets/img/characters/${cls}/walk8_${i}.png`);
+        this.load.image(`char_${cls}_walk_${i}`, `assets/img/characters/${dir}/walk8_${i}.png`);
       }
       for (let i = 0; i < 4; i++) {
-        this.load.image(`char_${cls}_atk_${i}`, `assets/img/characters/${cls}/atk_${i}.png`);
+        this.load.image(`char_${cls}_atk_${i}`, `assets/img/characters/${dir}/atk_${i}.png`);
       }
     }
 
@@ -252,16 +254,28 @@ export class BootScene extends Phaser.Scene {
   }
 
   private makeColorTile(key: string, primary: number, accent: number) {
-    const g = this.add.graphics();
-    g.fillStyle(primary, 1); g.fillRect(0, 0, 32, 32);
-    g.fillStyle(accent, 1);
-    g.fillRect(0, 0, 32, 1); g.fillRect(0, 31, 32, 1);
-    g.fillRect(0, 0, 1, 32); g.fillRect(31, 0, 1, 32);
-    // dot pattern
-    g.fillStyle(accent, 0.5);
-    g.fillRect(8, 8, 2, 2); g.fillRect(22, 14, 2, 2); g.fillRect(14, 22, 2, 2);
-    g.generateTexture(key, 32, 32);
-    g.destroy();
+    // Generate 3 variants per tile family — pseudo-random noise (no grid lines)
+    for (let v = 0; v < 3; v++) {
+      const g = this.add.graphics();
+      g.fillStyle(primary, 1); g.fillRect(0, 0, 32, 32);
+      // Subtle variation patches
+      g.fillStyle(accent, 0.18);
+      const seed = (key.charCodeAt(0) + v * 7) * 31;
+      for (let i = 0; i < 14; i++) {
+        const x = (seed * (i + 1) * 11) % 32;
+        const y = (seed * (i + 3) * 17) % 32;
+        const s = ((seed + i) % 3) + 1;
+        g.fillRect(x, y, s, s);
+      }
+      g.fillStyle(primary, 0.5);
+      for (let i = 0; i < 6; i++) {
+        const x = (seed * (i + 5) * 13) % 32;
+        const y = (seed * (i + 2) * 19) % 32;
+        g.fillRect(x, y, 2, 1);
+      }
+      g.generateTexture(v === 0 ? key : `${key}_v${v}`, 32, 32);
+      g.destroy();
+    }
   }
 
   private makeCharSprite(key: string, color: number, initial: string) {
