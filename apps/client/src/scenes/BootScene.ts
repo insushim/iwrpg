@@ -46,9 +46,13 @@ export class BootScene extends Phaser.Scene {
     this.load.image('bld_gacha', 'assets/img/scenery/building_gacha.png');
     this.load.image('bld_fountain', 'assets/img/scenery/building_fountain.png');
 
-    // === Priority-2: Aurora Town NPC sprites ===
+    // === Priority-2: Aurora Town NPC sprites (v1) ===
     for (let i = 0; i < 12; i++) {
       this.load.image(`npc_aurora_${i}`, `assets/img/npcs/aurora_npc_${i}.png`);
+    }
+    // === Priority-5: Aurora NPC v2 (clearer guard/bard) — overrides v1 if present ===
+    for (let i = 0; i < 12; i++) {
+      this.load.image(`npc_aurora_v2_${i}`, `assets/img/npcs/aurora_npc_v2_${i}.png`);
     }
     // === Priority-3: Treeshade NPCs (8) ===
     for (let i = 0; i < 8; i++) {
@@ -88,6 +92,21 @@ export class BootScene extends Phaser.Scene {
     ]) {
       this.load.image(`hero_${m}`, `assets/img/maps_hero/${m}.png`);
     }
+
+    // === Priority-5: Nature & props ===
+    for (let i = 0; i < 12; i++) {
+      this.load.image(`nature_${i}`, `assets/img/nature/nature_${i}.png`);
+    }
+    for (let i = 0; i < 8; i++) {
+      this.load.image(`decor_${i}`, `assets/img/nature/decor_${i}.png`);
+    }
+    for (let i = 0; i < 8; i++) {
+      this.load.image(`prop_${i}`, `assets/img/props/prop_${i}.png`);
+    }
+    // Seamless ground textures
+    this.load.image('ground_grass', 'assets/img/tiles_real/ground_grass.png');
+    this.load.image('ground_path', 'assets/img/tiles_real/ground_path.png');
+    this.load.image('ground_dirt', 'assets/img/tiles_real/ground_dirt.png');
 
     // === Priority-3: Gacha box illustrations ===
     for (const r of ['normal', 'rare', 'epic', 'legendary', 'rune']) {

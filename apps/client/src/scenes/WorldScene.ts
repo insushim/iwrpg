@@ -413,9 +413,31 @@ export class WorldScene extends Phaser.Scene {
     const rand = () => { rng = (rng * 9301 + 49297) % 233280; return rng / 233280; };
     const W = this.mapWidth, H = this.mapHeight;
     const place = (key: string, x: number, y: number, depth = 0) => {
-      const img = this.add.image(x * TILE_SIZE + TILE_SIZE / 2, y * TILE_SIZE + TILE_SIZE / 2, key)
+      // Prefer codex nature/decor/prop sprites over procedural placeholders when available
+      const codexMap: Record<string, string[]> = {
+        'scenery_tree':    ['nature_0', 'nature_1', 'nature_3', 'nature_4'],
+        'scenery_bush':    ['nature_6', 'nature_7'],
+        'scenery_rock':    ['nature_9', 'nature_10', 'nature_11'],
+        'scenery_lantern': ['prop_0'],
+        'scenery_banner':  ['prop_7'],
+      };
+      let useKey = key;
+      const alts = codexMap[key];
+      if (alts) {
+        const idx = (Math.floor(x * 23 + y * 31) % alts.length + alts.length) % alts.length;
+        if (this.textures.exists(alts[idx])) useKey = alts[idx];
+      }
+      const img = this.add.image(x * TILE_SIZE + TILE_SIZE / 2, y * TILE_SIZE + TILE_SIZE / 2, useKey)
         .setOrigin(0.5, 0.85)
         .setDepth(depth);
+      // Codex sprites are large (256+px) — scale down to fit world tiles
+      if (useKey.startsWith('nature_') || useKey.startsWith('prop_')) {
+        const tex = this.textures.get(useKey).getSourceImage() as any;
+        const w = tex?.width ?? 256;
+        // Trees ~3 tiles tall, bushes/rocks ~1.5 tiles
+        const target = key === 'scenery_tree' ? 96 : 56;
+        img.setScale(target / w);
+      }
       this.tileLayer.add(img);
     };
     const isWalkable = (x: number, y: number) => {
@@ -438,6 +460,9 @@ export class WorldScene extends Phaser.Scene {
       }
       this.tileLayer.add(fountain);
       // Buildings: codex illustrations mapped by NPC role
+      // Track placed building cells to avoid overlap
+      const placedBuildings: Array<{ x: number; y: number }> = [];
+      const minBuildingDistance = 7; // tiles
       for (const loc of map.npc_locations ?? []) {
         const id = loc.id;
         const codexKey = id.includes('innkeeper') ? 'bld_inn'
@@ -453,8 +478,18 @@ export class WorldScene extends Phaser.Scene {
           : id.includes('merchant') || id.includes('smith') || id.includes('banker') || id.includes('gacha') ? 'scenery_shop'
           : 'scenery_house';
         const finalKey = useReal ? codexKey : procFallback;
-        const bx = loc.x;
-        const by = Math.max(3, loc.y - 3);
+        // Find nearest non-overlapping spot above the NPC
+        let bx = loc.x;
+        let by = Math.max(3, loc.y - 4);
+        let attempts = 0;
+        while (attempts < 8) {
+          const overlap = placedBuildings.some(p => Math.abs(p.x - bx) < minBuildingDistance && Math.abs(p.y - by) < 5);
+          if (!overlap) break;
+          // Shift sideways
+          bx += (attempts % 2 === 0 ? 1 : -1) * (Math.floor(attempts / 2) + 1) * 2;
+          attempts++;
+        }
+        placedBuildings.push({ x: bx, y: by });
         const img = this.add.image(bx * TILE_SIZE + TILE_SIZE / 2, by * TILE_SIZE + TILE_SIZE / 2, finalKey)
           .setOrigin(0.5, 0.85).setDepth(3);
         if (useReal) {
@@ -540,11 +575,14 @@ export class WorldScene extends Phaser.Scene {
       const cx = loc.x * TILE_SIZE + TILE_SIZE / 2;
       const cy = loc.y * TILE_SIZE + TILE_SIZE / 2;
       const c = this.add.container(cx, cy);
-      // Real codex NPC sprite if available
+      // Real codex NPC sprite if available — prefer v2 atlas when present
       let codexKey = '';
       if (mapId.startsWith('aurora_town')) {
         const f = AURORA_NPC_FRAME[loc.id];
-        if (f !== undefined) codexKey = `npc_aurora_${f}`;
+        if (f !== undefined) {
+          const v2Key = `npc_aurora_v2_${f}`;
+          codexKey = this.textures.exists(v2Key) ? v2Key : `npc_aurora_${f}`;
+        }
       } else {
         const prefix = npcAtlasPrefixForMap(mapId);
         if (prefix) codexKey = `${prefix}_${npcFrameForRole(loc.id)}`;
