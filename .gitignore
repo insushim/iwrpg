@@ -18,3 +18,4 @@ apps/client/public/assets/img/**/*_raw.png
 apps/client/src/data/**/*.js
 apps/server/src/**/*.js
 .vercel
+tmp/
