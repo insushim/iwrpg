@@ -136,6 +136,30 @@ export class WorldScene extends Phaser.Scene {
     NetClient.inst.onDisconnected = () => {
       console.warn('[WorldScene] disconnected — attempting reconnect');
     };
+
+    // Manual recovery button for stuck-state escape hatch
+    this.installResetButton();
+  }
+
+  private installResetButton() {
+    const existing = document.getElementById('rwc-reset-btn');
+    if (existing) existing.remove();
+    const btn = document.createElement('button');
+    btn.id = 'rwc-reset-btn';
+    btn.textContent = '⟲ 재접속';
+    btn.style.cssText = `
+      position: fixed; top: 8px; right: 320px; z-index: 9999;
+      background: #2A1810; color: #FCD34D; border: 1px solid #C9A227;
+      padding: 6px 10px; border-radius: 4px; cursor: pointer;
+      font: 12px Cinzel, serif; opacity: 0.7;`;
+    btn.onmouseenter = () => (btn.style.opacity = '1');
+    btn.onmouseleave = () => (btn.style.opacity = '0.7');
+    btn.onclick = () => {
+      console.log('[WorldScene] manual reset clicked');
+      this.scene.restart();
+    };
+    document.body.appendChild(btn);
+    this.events.once('shutdown', () => btn.remove());
   }
 
   private bindNetwork() {
@@ -340,15 +364,23 @@ export class WorldScene extends Phaser.Scene {
 
     this.events.on('update', () => {
       const now = this.time.now;
-      if (now - this.lastMoveSentAt < 160) return;
+      if (now - this.lastMoveSentAt < 140) return;
       const me = (NetClient.inst.worldRoom?.state as any)?.players?.get(this.myCharId);
-      if (!me) return;
+      if (!me) {
+        // Watchdog: if me undefined for >8s, force scene restart to re-bind
+        if (this.lastSeenPos.t === 0) this.lastSeenPos.t = now;
+        if (now - this.lastSeenPos.t > 8000) {
+          console.warn('[WorldScene] me undefined too long, restarting scene');
+          this.lastSeenPos.t = 0;
+          this.scene.restart();
+        }
+        return;
+      }
 
-      // Stuck detection: if our last sent move never changed pos in 1500ms, clear walk target
-      if (this.lastSeenPos.x !== me.x || this.lastSeenPos.y !== me.y) {
+      // Track position changes for slide-around logic
+      const positionChanged = this.lastSeenPos.x !== me.x || this.lastSeenPos.y !== me.y;
+      if (positionChanged) {
         this.lastSeenPos = { x: me.x, y: me.y, t: now };
-      } else if (this.walkTarget && now - this.lastSeenPos.t > 1500) {
-        this.walkTarget = null; // give up — collision or rejected
       }
 
       let dx = 0, dy = 0;
@@ -362,8 +394,24 @@ export class WorldScene extends Phaser.Scene {
         if (this.walkTarget.tx === me.x && this.walkTarget.ty === me.y) {
           this.walkTarget = null;
         } else {
-          dx = Math.sign(this.walkTarget.tx - me.x);
-          dy = Math.sign(this.walkTarget.ty - me.y);
+          // Direct step toward target. If stuck (no progress 600ms), slide along single axis.
+          const stuckMs = now - this.lastSeenPos.t;
+          const wantX = Math.sign(this.walkTarget.tx - me.x);
+          const wantY = Math.sign(this.walkTarget.ty - me.y);
+          if (stuckMs < 600) {
+            dx = wantX; dy = wantY;
+          } else if (stuckMs < 1200) {
+            // Try X-only slide
+            dx = wantX; dy = 0;
+            if (dx === 0) { dx = 0; dy = wantY; }
+          } else if (stuckMs < 1800) {
+            // Try Y-only slide
+            dx = 0; dy = wantY;
+            if (dy === 0) { dx = wantX; dy = 0; }
+          } else {
+            // Truly stuck — give up
+            this.walkTarget = null;
+          }
         }
       }
       if (dx !== 0 || dy !== 0) {
@@ -708,8 +756,9 @@ export class WorldScene extends Phaser.Scene {
         const tex = this.textures.get(finalKey).getSourceImage() as any;
         const w = tex?.width ?? 256;
         const h = tex?.height ?? 384;
-        // Scale by HEIGHT for tall (vertical) NPC cells so full body fits at ~64px tall
-        const scale = h > w ? 64 / h : 80 / w;
+        // For vertical cells (h > w), scale by height. ~56px tall (was 64) — leaves
+        // visual headroom in case the source atlas cell baked in some cropping near edges.
+        const scale = h > w * 1.1 ? 56 / h : 72 / w;
         body.setScale(scale);
       } else {
         body.setScale(1.4); // bigger placeholder circle as fallback
