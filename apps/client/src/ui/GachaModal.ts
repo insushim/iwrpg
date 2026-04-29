@@ -97,10 +97,12 @@ export class GachaModal {
       rune: '#FCD34D',
     };
     const canOpen = tokens >= box.token_cost;
+    const rarityToFile: Record<string, string> = { common: 'normal', rare: 'rare', epic: 'epic', legendary: 'legendary', rune: 'rune' };
+    const file = rarityToFile[box.rarity] ?? 'normal';
     return `
       <div style="background: var(--color-bg-elevated); border: 2px solid ${colors[box.rarity]}; border-radius: 8px; padding: 12px; text-align: center;">
         <div style="font-family: var(--font-display); color: ${colors[box.rarity]}; font-size: 14px; margin-bottom: 4px;">${box.name_ko ?? box.id}</div>
-        <div style="font-size: 36px; margin: 8px 0;">📦</div>
+        <img src="assets/img/gacha/box_${file}.png" style="width:96px;height:96px;object-fit:contain;margin: 4px auto;display:block;filter: drop-shadow(0 4px 8px rgba(0,0,0,0.5));" alt=""/>
         <div style="font-size: 11px; color: var(--color-text-secondary); margin-bottom: 8px;">${box.token_cost} 토큰</div>
         <button class="gacha-box-btn ${canOpen ? '' : 'disabled'}" data-box="${box.id}"
           style="width:100%; padding: 6px; background: ${canOpen ? colors[box.rarity] : 'var(--color-bg-deep)'}; color: ${canOpen ? '#1A1410' : 'var(--color-text-muted)'}; border: none; border-radius: 4px; cursor: ${canOpen ? 'pointer' : 'not-allowed'}; font-weight: 700; font-family: var(--font-display); font-size: 12px;"

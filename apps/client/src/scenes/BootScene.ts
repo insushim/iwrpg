@@ -50,12 +50,50 @@ export class BootScene extends Phaser.Scene {
     for (let i = 0; i < 12; i++) {
       this.load.image(`npc_aurora_${i}`, `assets/img/npcs/aurora_npc_${i}.png`);
     }
+    // === Priority-3: Treeshade NPCs (8) ===
+    for (let i = 0; i < 8; i++) {
+      this.load.image(`npc_treeshade_${i}`, `assets/img/npcs/treeshade_npc_${i}.png`);
+    }
+    // === Priority-4: 3 town NPC atlases (Crimson / Verity / Starhaven, 8 each) ===
+    for (const town of ['crimson', 'verity', 'starhaven']) {
+      for (let i = 0; i < 8; i++) {
+        this.load.image(`npc_${town}_${i}`, `assets/img/npcs/${town}_npc_${i}.png`);
+      }
+    }
 
-    // === Character 8-direction walk frames (loaded for animation) ===
+    // === Character 8-direction walk + 4-frame attack ===
     for (const cls of ['aether_lord', 'iron_sentinel', 'sylvan_ranger', 'rune_weaver']) {
       for (let i = 0; i < 8; i++) {
         this.load.image(`char_${cls}_walk_${i}`, `assets/img/characters/${cls}/walk8_${i}.png`);
       }
+      for (let i = 0; i < 4; i++) {
+        this.load.image(`char_${cls}_atk_${i}`, `assets/img/characters/${cls}/atk_${i}.png`);
+      }
+    }
+
+    // === Priority-4: Character portraits (CharCreate selection art) ===
+    this.load.image('portrait_aether-lord', 'assets/img/portraits/aether_lord_portrait.png');
+    this.load.image('portrait_iron-sentinel', 'assets/img/portraits/iron_sentinel_portrait.png');
+    this.load.image('portrait_sylvan-ranger', 'assets/img/portraits/sylvan_ranger_portrait.png');
+    this.load.image('portrait_rune-weaver', 'assets/img/portraits/rune_weaver_portrait.png');
+
+    // === Priority-3/4: Map hero shots (loading splashes) for all 17 maps ===
+    for (const m of [
+      'aurora_town', 'treeshade_town', 'crimson_fortress', 'verity_citadel', 'starhaven',
+      'aurora_fields', 'forgotten_meadow', 'whisper_woods', 'sunken_mine', 'mistwail_marsh',
+      'ashen_caverns', 'azure_grove', 'ruined_citadel', 'ruined_temple', 'pyre_peaks',
+      'aether_rift', 'drakensvale',
+    ]) {
+      this.load.image(`hero_${m}`, `assets/img/maps_hero/${m}.png`);
+    }
+
+    // === Priority-3: Gacha box illustrations ===
+    for (const r of ['normal', 'rare', 'epic', 'legendary', 'rune']) {
+      this.load.image(`gacha_${r}`, `assets/img/gacha/box_${r}.png`);
+    }
+    // Gacha open burst (4 frames)
+    for (let i = 0; i < 4; i++) {
+      this.load.image(`gacha_open_${i}`, `assets/img/effects/gacha_open_${i}.png`);
     }
 
     // Mark loaders as optional (don't error on 404)

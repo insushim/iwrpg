@@ -49,8 +49,16 @@ export class CharCreateScene extends Phaser.Scene {
   }
 
   private classCardHtml(c: typeof CLASSES[ClassId]): string {
+    const fileMap: Record<string, string> = {
+      'aether-lord': 'aether_lord_portrait.png',
+      'iron-sentinel': 'iron_sentinel_portrait.png',
+      'sylvan-ranger': 'sylvan_ranger_portrait.png',
+      'rune-weaver': 'rune_weaver_portrait.png',
+    };
+    const portrait = `assets/img/portraits/${fileMap[c.id]}`;
     return `
       <div class="class-card" data-class-id="${c.id}">
+        <div class="class-portrait" style="background-image:url('${portrait}')"></div>
         <div class="name">${c.name_ko}</div>
         <div class="role">${c.name_en}</div>
         <div class="desc">${c.description_ko}</div>

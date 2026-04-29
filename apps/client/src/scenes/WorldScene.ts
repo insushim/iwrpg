@@ -45,6 +45,27 @@ const AURORA_NPC_FRAME: Record<string, number> = {
   npc_aurora_transformer_vael: 10,
   npc_aurora_gacha_selevis: 11,
 };
+
+// Role-based atlas frame index for non-Aurora towns (8-frame atlases)
+function npcFrameForRole(id: string): number {
+  if (id.includes('merchant')) return 0;
+  if (id.includes('smith')) return 1;
+  if (id.includes('priest') || id.includes('healer')) return 2;
+  if (id.includes('quest') || id.includes('chief') || id.includes('marshal') || id.includes('chancellor') || id.includes('skylord') || id.includes('warden') || id.includes('oracle')) return 3;
+  if (id.includes('innkeeper')) return 4;
+  if (id.includes('guard') || id.includes('captain')) return 5;
+  if (id.includes('bard') || id.includes('hunter') || id.includes('scholar') || id.includes('monk') || id.includes('cleric')) return 6;
+  return 7; // banker / auctioneer / transformer / gacha / rune / engineer / etc.
+}
+
+function npcAtlasPrefixForMap(mapId: string): string | null {
+  if (mapId.startsWith('aurora_town')) return null; // uses AURORA_NPC_FRAME
+  if (mapId.startsWith('treeshade')) return 'npc_treeshade';
+  if (mapId.startsWith('crimson')) return 'npc_crimson';
+  if (mapId.startsWith('verity')) return 'npc_verity';
+  if (mapId.startsWith('starhaven')) return 'npc_starhaven';
+  return null;
+}
 interface MonsterSprite {
   container: Phaser.GameObjects.Container;
   body: Phaser.GameObjects.Image;
@@ -170,6 +191,11 @@ export class WorldScene extends Phaser.Scene {
     room.onMessage('damage_dealt', (msg: any) => {
       this.spawnDamageNumber(msg);
       AudioManager.playSfx('hit');
+      // Play 4-frame attack animation on the attacker (if it's a player we know)
+      const attacker = this.players.get(msg.sourceId);
+      if (attacker && this.textures.exists(`char_${attacker.classId}_atk_0`)) {
+        this.playAttackAnimation(attacker);
+      }
     });
     room.onMessage('monster_killed', (_msg: any) => {
       this.cameras.main.shake(80, 0.004);
@@ -261,6 +287,7 @@ export class WorldScene extends Phaser.Scene {
             if (dx + dy <= 5) {
               NetClient.inst.send('attack', { targetId: target.id });
               AudioManager.playSfx('attack');
+              if (this.myPlayer) this.playAttackAnimation(this.myPlayer);
               return;
             }
           }
@@ -337,6 +364,24 @@ export class WorldScene extends Phaser.Scene {
     body.setOrigin(0.5, 0.75);
     c.add(body);
     return { container: c, body };
+  }
+
+  private playAttackAnimation(sprite: PlayerSprite) {
+    const cls = sprite.classId;
+    const frames = [`char_${cls}_atk_0`, `char_${cls}_atk_1`, `char_${cls}_atk_2`, `char_${cls}_atk_3`];
+    let i = 0;
+    const tick = () => {
+      if (i >= frames.length) {
+        // Restore idle / walk frame
+        const idleKey = `char_${cls}`;
+        if (this.textures.exists(idleKey)) sprite.body.setTexture(idleKey);
+        return;
+      }
+      if (this.textures.exists(frames[i])) sprite.body.setTexture(frames[i]);
+      i++;
+      this.time.delayedCall(80, tick);
+    };
+    tick();
   }
 
   private spawnDamageNumber(msg: any) {
@@ -486,9 +531,15 @@ export class WorldScene extends Phaser.Scene {
       const cx = loc.x * TILE_SIZE + TILE_SIZE / 2;
       const cy = loc.y * TILE_SIZE + TILE_SIZE / 2;
       const c = this.add.container(cx, cy);
-      // Real codex NPC sprite if available (Aurora town atlas), else fallback placeholder
-      const frame = AURORA_NPC_FRAME[loc.id];
-      const codexKey = frame !== undefined ? `npc_aurora_${frame}` : '';
+      // Real codex NPC sprite if available
+      let codexKey = '';
+      if (mapId.startsWith('aurora_town')) {
+        const f = AURORA_NPC_FRAME[loc.id];
+        if (f !== undefined) codexKey = `npc_aurora_${f}`;
+      } else {
+        const prefix = npcAtlasPrefixForMap(mapId);
+        if (prefix) codexKey = `${prefix}_${npcFrameForRole(loc.id)}`;
+      }
       const useReal = codexKey && this.textures.exists(codexKey);
       const finalKey = useReal ? codexKey : 'npc_default';
       const body = this.add.image(0, 0, finalKey).setOrigin(0.5, 0.78);
