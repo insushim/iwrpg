@@ -54,6 +54,16 @@ export class BootScene extends Phaser.Scene {
     for (let i = 0; i < 12; i++) {
       this.load.image(`npc_aurora_v2_${i}`, `assets/img/npcs/aurora_npc_v2_${i}.png`);
     }
+    // === Priority-9: Aurora NPC v3 (full-body, no cropping) — preferred ===
+    for (let i = 0; i < 12; i++) {
+      this.load.image(`npc_aurora_v3_${i}`, `assets/img/npcs/aurora_npc_v3_${i}.png`);
+    }
+    // === Priority-9: Other towns NPC v2 (full-body) — preferred ===
+    for (const town of ['treeshade', 'crimson', 'verity', 'starhaven']) {
+      for (let i = 0; i < 8; i++) {
+        this.load.image(`npc_${town}_v2_${i}`, `assets/img/npcs/${town}_npc_v2_${i}.png`);
+      }
+    }
     // === Priority-3: Treeshade NPCs (8) ===
     for (let i = 0; i < 8; i++) {
       this.load.image(`npc_treeshade_${i}`, `assets/img/npcs/treeshade_npc_${i}.png`);
@@ -74,6 +84,10 @@ export class BootScene extends Phaser.Scene {
       }
       for (let i = 0; i < 4; i++) {
         this.load.image(`char_${cls}_atk_${i}`, `assets/img/characters/${dir}/atk_${i}.png`);
+      }
+      // P9: 32-frame walk cycle (8 directions × 4 frames each)
+      for (let i = 0; i < 32; i++) {
+        this.load.image(`char_${cls}_walk32_${i}`, `assets/img/characters/${dir}/walk32_${i}.png`);
       }
     }
 

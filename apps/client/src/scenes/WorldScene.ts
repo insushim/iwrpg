@@ -15,6 +15,10 @@ interface PlayerSprite {
   lastX: number;
   lastY: number;
   classId: string;
+  dir: number;        // last facing direction 0..7
+  walkFrame: number;  // current walk-cycle frame 0..3
+  lastWalkAt: number; // ms timestamp of last position change (for idle detection)
+  lastFrameAt: number; // ms timestamp of last frame swap
 }
 
 // 8-direction frame index (matches codex 4×2 atlas: row1=s/se/e/ne, row2=n/nw/w/sw)
@@ -85,6 +89,9 @@ export class WorldScene extends Phaser.Scene {
   private tileLayer!: Phaser.GameObjects.Container;
   private tapMarker!: Phaser.GameObjects.Image;
   private lastQuizPrompt: any = null;
+  private walkTarget: { tx: number; ty: number } | null = null;
+  private lastMoveSentAt = 0;
+  private lastSeenPos = { x: -1, y: -1, t: 0 };
 
   constructor() { super({ key: 'WorldScene' }); }
 
@@ -130,11 +137,8 @@ export class WorldScene extends Phaser.Scene {
         );
         const dir = dirToFrame(dx, dy);
         if (dir >= 0) {
-          const walkKey = `char_${sprite.classId}_walk_${dir}`;
-          if (this.textures.exists(walkKey)) sprite.body.setTexture(walkKey);
-        } else {
-          const idleKey = `char_${sprite.classId}`;
-          if (this.textures.exists(idleKey)) sprite.body.setTexture(idleKey);
+          sprite.dir = dir;
+          sprite.lastWalkAt = this.time.now;
         }
         sprite.lastX = player.x;
         sprite.lastY = player.y;
@@ -293,14 +297,8 @@ export class WorldScene extends Phaser.Scene {
           }
         }
       }
-      // Otherwise: move to clicked tile
-      const me = (NetClient.inst.worldRoom?.state as any).players.get(this.myCharId);
-      if (me) {
-        // Step 1 tile toward target each call (server enforces)
-        const stepX = me.x + Math.sign(tx - me.x);
-        const stepY = me.y + Math.sign(ty - me.y);
-        NetClient.inst.send('move', { tx: stepX, ty: stepY });
-      }
+      // Otherwise: continuous walk to clicked tile (multi-step until reached)
+      this.walkTarget = { tx, ty };
     });
 
     // Keyboard movement (WASD or arrow keys)
@@ -315,22 +313,76 @@ export class WorldScene extends Phaser.Scene {
       RIGHT: Phaser.Input.Keyboard.KeyCodes.RIGHT,
     }) as any;
 
-    let lastMoveAt = 0;
-    this.events.on('update', (_t: number, delta: number) => {
+    this.events.on('update', () => {
       const now = this.time.now;
-      if (now - lastMoveAt < 220) return;
+      if (now - this.lastMoveSentAt < 160) return;
       const me = (NetClient.inst.worldRoom?.state as any)?.players?.get(this.myCharId);
       if (!me) return;
+
+      // Stuck detection: if our last sent move never changed pos in 1500ms, clear walk target
+      if (this.lastSeenPos.x !== me.x || this.lastSeenPos.y !== me.y) {
+        this.lastSeenPos = { x: me.x, y: me.y, t: now };
+      } else if (this.walkTarget && now - this.lastSeenPos.t > 1500) {
+        this.walkTarget = null; // give up — collision or rejected
+      }
+
       let dx = 0, dy = 0;
-      if (keys.A.isDown || keys.LEFT.isDown) dx = -1;
-      else if (keys.D.isDown || keys.RIGHT.isDown) dx = 1;
-      if (keys.W.isDown || keys.UP.isDown) dy = -1;
-      else if (keys.S.isDown || keys.DOWN.isDown) dy = 1;
+      // Keyboard takes precedence and cancels click-to-walk
+      const kbX = (keys.A.isDown || keys.LEFT.isDown) ? -1 : (keys.D.isDown || keys.RIGHT.isDown) ? 1 : 0;
+      const kbY = (keys.W.isDown || keys.UP.isDown) ? -1 : (keys.S.isDown || keys.DOWN.isDown) ? 1 : 0;
+      if (kbX !== 0 || kbY !== 0) {
+        this.walkTarget = null;
+        dx = kbX; dy = kbY;
+      } else if (this.walkTarget) {
+        if (this.walkTarget.tx === me.x && this.walkTarget.ty === me.y) {
+          this.walkTarget = null;
+        } else {
+          dx = Math.sign(this.walkTarget.tx - me.x);
+          dy = Math.sign(this.walkTarget.ty - me.y);
+        }
+      }
       if (dx !== 0 || dy !== 0) {
         NetClient.inst.send('move', { tx: me.x + dx, ty: me.y + dy });
-        lastMoveAt = now;
+        this.lastMoveSentAt = now;
       }
     });
+
+    // Sprite walk-frame cycling (per-player) — 4 frames @ 150ms = full step every 600ms
+    this.events.on('update', () => this.tickPlayerAnimations());
+  }
+
+  private tickPlayerAnimations() {
+    const now = this.time.now;
+    for (const sprite of this.players.values()) {
+      const cls = sprite.classId;
+      const isMoving = (now - sprite.lastWalkAt) < 350;
+      if (isMoving) {
+        if (now - sprite.lastFrameAt > 140) {
+          sprite.walkFrame = (sprite.walkFrame + 1) % 4;
+          sprite.lastFrameAt = now;
+        }
+        // Try walk32 first (8 dir × 4 frames). Fallback to walk_{dir} (8 dir × 1 frame). Final fallback to idle.
+        const w32Key = `char_${cls}_walk32_${sprite.dir * 4 + sprite.walkFrame}`;
+        if (this.textures.exists(w32Key)) {
+          sprite.body.setTexture(w32Key);
+          continue;
+        }
+        const wKey = `char_${cls}_walk_${sprite.dir}`;
+        if (this.textures.exists(wKey)) {
+          sprite.body.setTexture(wKey);
+          continue;
+        }
+      } else {
+        // idle: snap to frame 0 of current direction (or default idle)
+        const w32Idle = `char_${cls}_walk32_${sprite.dir * 4}`;
+        if (this.textures.exists(w32Idle)) {
+          sprite.body.setTexture(w32Idle);
+          continue;
+        }
+        const idleKey = `char_${cls}`;
+        if (this.textures.exists(idleKey)) sprite.body.setTexture(idleKey);
+      }
+    }
   }
 
   private makePlayerSprite(player: any, isMe: boolean): PlayerSprite {
@@ -350,7 +402,13 @@ export class WorldScene extends Phaser.Scene {
     }).setOrigin(0.5);
     c.add([body, label]);
     if (isMe) c.setDepth(100);
-    return { container: c, body, label, isMe, lastX: player.x, lastY: player.y, classId: player.classId };
+    return {
+      container: c, body, label, isMe,
+      lastX: player.x, lastY: player.y,
+      classId: player.classId,
+      dir: 0, walkFrame: 0,
+      lastWalkAt: 0, lastFrameAt: 0,
+    };
   }
 
   private makeMonsterSprite(m: any, key: string): MonsterSprite {
@@ -575,25 +633,36 @@ export class WorldScene extends Phaser.Scene {
       const cx = loc.x * TILE_SIZE + TILE_SIZE / 2;
       const cy = loc.y * TILE_SIZE + TILE_SIZE / 2;
       const c = this.add.container(cx, cy);
-      // Real codex NPC sprite if available — prefer v2 atlas when present
+      // Real codex NPC sprite if available — prefer v3 (P9 full-body) > v2 > v1
       let codexKey = '';
       if (mapId.startsWith('aurora_town')) {
         const f = AURORA_NPC_FRAME[loc.id];
         if (f !== undefined) {
+          const v3Key = `npc_aurora_v3_${f}`;
           const v2Key = `npc_aurora_v2_${f}`;
-          codexKey = this.textures.exists(v2Key) ? v2Key : `npc_aurora_${f}`;
+          codexKey = this.textures.exists(v3Key) ? v3Key
+                   : this.textures.exists(v2Key) ? v2Key
+                   : `npc_aurora_${f}`;
         }
       } else {
-        const prefix = npcAtlasPrefixForMap(mapId);
-        if (prefix) codexKey = `${prefix}_${npcFrameForRole(loc.id)}`;
+        const prefix = npcAtlasPrefixForMap(mapId); // e.g. 'npc_treeshade'
+        if (prefix) {
+          const f = npcFrameForRole(loc.id);
+          const town = prefix.replace('npc_', '');
+          const v2Key = `npc_${town}_v2_${f}`;
+          codexKey = this.textures.exists(v2Key) ? v2Key : `${prefix}_${f}`;
+        }
       }
       const useReal = codexKey && this.textures.exists(codexKey);
       const finalKey = useReal ? codexKey : 'npc_default';
-      const body = this.add.image(0, 0, finalKey).setOrigin(0.5, 0.78);
+      const body = this.add.image(0, 0, finalKey).setOrigin(0.5, 0.95);
       if (useReal) {
         const tex = this.textures.get(finalKey).getSourceImage() as any;
         const w = tex?.width ?? 256;
-        body.setScale(80 / w); // bigger NPC sprite (was 48 → too small)
+        const h = tex?.height ?? 384;
+        // Scale by HEIGHT for tall (vertical) NPC cells so full body fits at ~64px tall
+        const scale = h > w ? 64 / h : 80 / w;
+        body.setScale(scale);
       } else {
         body.setScale(1.4); // bigger placeholder circle as fallback
       }
