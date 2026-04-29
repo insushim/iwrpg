@@ -115,6 +115,14 @@ export class WorldScene extends Phaser.Scene {
     const charPayload = JSON.parse(sessionStorage.getItem('rwc-char') ?? '{}');
     this.myCharId = charPayload.charId ?? '';
 
+    // Defensive: clear any stale sprite refs from previous scene incarnation
+    this.players.clear();
+    this.monsters.clear();
+    this.drops.clear();
+    this.myPlayer = null;
+    this.walkTarget = null;
+    this.lastSeenPos = { x: -1, y: -1, t: 0 };
+
     this.cameras.main.setBackgroundColor('#0f1218');
     this.tileLayer = this.add.container(0, 0);
     this.tapMarker = this.add.image(-1000, -1000, 'tap_target').setVisible(false);
@@ -151,12 +159,19 @@ export class WorldScene extends Phaser.Scene {
       position: fixed; top: 8px; right: 320px; z-index: 9999;
       background: #2A1810; color: #FCD34D; border: 1px solid #C9A227;
       padding: 6px 10px; border-radius: 4px; cursor: pointer;
-      font: 12px Cinzel, serif; opacity: 0.7;`;
-    btn.onmouseenter = () => (btn.style.opacity = '1');
-    btn.onmouseleave = () => (btn.style.opacity = '0.7');
-    btn.onclick = () => {
-      console.log('[WorldScene] manual reset clicked');
-      this.scene.restart();
+      font: 12px Cinzel, serif; opacity: 0.85;`;
+    btn.onclick = async () => {
+      btn.disabled = true;
+      btn.textContent = '⟳ 재접속중…';
+      try {
+        await NetClient.inst.forceReconnect(); // full WS close + rejoin
+        // onReconnected fires scene.restart() which re-installs the button
+      } catch (e) {
+        console.warn(e);
+      } finally {
+        btn.disabled = false;
+        btn.textContent = '⟲ 재접속';
+      }
     };
     document.body.appendChild(btn);
     this.events.once('shutdown', () => btn.remove());
@@ -417,6 +432,17 @@ export class WorldScene extends Phaser.Scene {
       if (dx !== 0 || dy !== 0) {
         NetClient.inst.send('move', { tx: me.x + dx, ty: me.y + dy });
         this.lastMoveSentAt = now;
+      }
+
+      // State-sync watchdog: if we've been sending moves for 4s without ANY position change,
+      // server isn't acknowledging. Force a full reconnect.
+      const sendingButStuck = (now - this.lastMoveSentAt < 500) // we just sent a move
+        && (now - this.lastSeenPos.t > 4000)                    // but no position change in 4s
+        && this.lastSeenPos.t > 0;
+      if (sendingButStuck) {
+        console.warn('[WorldScene] state desync detected — forcing reconnect');
+        this.lastSeenPos.t = now; // reset to avoid re-trigger storm
+        NetClient.inst.forceReconnect().catch(() => {});
       }
     });
 

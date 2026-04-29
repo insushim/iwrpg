@@ -11,6 +11,23 @@ export class NetClient {
   private listeners: Array<{ type: string; cb: (msg: any) => void }> = [];
   onReconnected?: () => void;
   onDisconnected?: () => void;
+  /** Force a full reconnect — closes room, joins fresh, fires onReconnected. */
+  async forceReconnect(): Promise<void> {
+    this.stopHeartbeat();
+    if (this.worldRoom) {
+      try { await this.worldRoom.leave(true); } catch {}
+      this.worldRoom = null;
+    }
+    if (!this.charPayload || !this.currentMap) return;
+    try {
+      this.worldRoom = await this.client.joinOrCreate(`world_${this.currentMap}`, this.charPayload);
+      this.installLifecycle();
+      this.startHeartbeat();
+      this.onReconnected?.();
+    } catch (e) {
+      console.warn('[NetClient] forceReconnect failed', e);
+    }
+  }
 
   private constructor() {
     const wsUrl = (import.meta as any).env?.VITE_SERVER_WS ?? 'ws://localhost:2567';
