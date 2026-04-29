@@ -117,6 +117,48 @@ export class BootScene extends Phaser.Scene {
       this.load.image(`gacha_open_${i}`, `assets/img/effects/gacha_open_${i}.png`);
     }
 
+    // === Priority-6: Monster walk/attack/death atlases (8 frames each) ===
+    for (const tier of ['tier1', 'tier2', 'tier3', 'tier4', 'tier5']) {
+      for (let i = 0; i < 8; i++) {
+        this.load.image(`mon_${tier}_walk_${i}`, `assets/img/monsters/anim/${tier}_walk_${i}.png`);
+      }
+    }
+    for (let i = 0; i < 8; i++) {
+      this.load.image(`mon_attack_${i}`, `assets/img/monsters/anim/mon_attack_${i}.png`);
+      this.load.image(`mon_death_${i}`, `assets/img/monsters/anim/mon_death_${i}.png`);
+    }
+    // === Priority-6: UI markers + extra props ===
+    for (let i = 0; i < 6; i++) {
+      this.load.image(`marker_${i}`, `assets/img/effects/marker_${i}.png`);
+    }
+    for (let i = 0; i < 8; i++) {
+      this.load.image(`extra_prop_${i}`, `assets/img/props/extra_prop_${i}.png`);
+    }
+
+    // === Priority-7: Character cast/hit/down/death + 4-direction extra walk frames ===
+    for (const cls of ['aether-lord', 'iron-sentinel', 'sylvan-ranger', 'rune-weaver']) {
+      const dir = cls.replace(/-/g, '_');
+      for (const act of ['cast', 'hit', 'down', 'death']) {
+        this.load.image(`char_${cls}_${act}`, `assets/img/characters/${dir}/${act}.png`);
+      }
+    }
+
+    // === Priority-8: Items (potions/scrolls/equip/accessory/material) ===
+    for (const cat of ['potion', 'scroll_rune', 'equip', 'accessory', 'material']) {
+      for (let i = 0; i < 8; i++) {
+        this.load.image(`${cat}_${i}`, `assets/img/items/${cat}_${i}.png`);
+      }
+    }
+    // === Priority-8: UI button frames + HUD bars ===
+    for (let i = 0; i < 6; i++) {
+      this.load.image(`ui_${i}`, `assets/img/ui/ui_${i}.png`);
+      this.load.image(`hud_${i}`, `assets/img/ui/hud_${i}.png`);
+    }
+    // === Priority-8: Spell effects ===
+    for (let i = 0; i < 8; i++) {
+      this.load.image(`spell_${i}`, `assets/img/effects/spell_${i}.png`);
+    }
+
     // Mark loaders as optional (don't error on 404)
     this.load.on('loaderror', (file: any) => {
       console.warn('[BootScene] missing asset:', file.key, '— procedural fallback');

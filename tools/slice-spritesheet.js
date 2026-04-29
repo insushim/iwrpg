@@ -36,11 +36,12 @@ console.log(`Source: ${meta.width}x${meta.height}, cols=${cols}, rows=${rows}, c
 for (let r = 0; r < rows; r++) {
   for (let c = 0; c < cols; c++) {
     const rowName = rowNames?.[r] ?? `r${r}`;
+    const flatIdx = r * cols + c;
     const filename = naming
       .replace('{row}', String(r))
       .replace('{col}', String(c))
       .replace('{anim}', rowName)
-      .replace('{frame}', String(c));
+      .replace('{frame}', String(flatIdx));
     const out = resolve(outDir, `${filename}.png`);
     await sharp(args.input)
       .extract({ left: c * cellW, top: r * cellH, width: cellW, height: cellH })
