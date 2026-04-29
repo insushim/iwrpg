@@ -206,6 +206,13 @@ export class WorldScene extends Phaser.Scene {
         }
         sprite.lastX = player.x;
         sprite.lastY = player.y;
+        // Persist last known position for resilient reconnect
+        if (key === this.myCharId) {
+          NetClient.inst.lastKnownPos = {
+            x: player.x, y: player.y,
+            map: (NetClient.inst.worldRoom?.state as any)?.mapId,
+          };
+        }
       });
     });
     $(room.state).players.onRemove((_player: any, key: string) => {
@@ -433,17 +440,10 @@ export class WorldScene extends Phaser.Scene {
         NetClient.inst.send('move', { tx: me.x + dx, ty: me.y + dy });
         this.lastMoveSentAt = now;
       }
-
-      // State-sync watchdog: if we've been sending moves for 4s without ANY position change,
-      // server isn't acknowledging. Force a full reconnect.
-      const sendingButStuck = (now - this.lastMoveSentAt < 500) // we just sent a move
-        && (now - this.lastSeenPos.t > 4000)                    // but no position change in 4s
-        && this.lastSeenPos.t > 0;
-      if (sendingButStuck) {
-        console.warn('[WorldScene] state desync detected — forcing reconnect');
-        this.lastSeenPos.t = now; // reset to avoid re-trigger storm
-        NetClient.inst.forceReconnect().catch(() => {});
-      }
+      // NOTE: removed auto-reconnect watchdog — false positives during normal Render lag
+      // were triggering reconnects → server respawned player at STARTING (on fountain) →
+      // felt like the game reset every few moves. Reconnect is now manual (재접속 button)
+      // OR explicit on Colyseus onLeave (real disconnect, not heuristic).
     });
 
     // Sprite walk-frame cycling (per-player) — 4 frames @ 150ms = full step every 600ms

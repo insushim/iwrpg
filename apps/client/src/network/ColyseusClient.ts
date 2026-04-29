@@ -11,7 +11,10 @@ export class NetClient {
   private listeners: Array<{ type: string; cb: (msg: any) => void }> = [];
   onReconnected?: () => void;
   onDisconnected?: () => void;
-  /** Force a full reconnect — closes room, joins fresh, fires onReconnected. */
+  /** Track last known position so we can resume there on reconnect (avoid respawn at STARTING). */
+  lastKnownPos: { x?: number; y?: number; map?: string } = {};
+
+  /** Force a full reconnect — closes room, joins fresh (with last known position), fires onReconnected. */
   async forceReconnect(): Promise<void> {
     this.stopHeartbeat();
     if (this.worldRoom) {
@@ -19,8 +22,13 @@ export class NetClient {
       this.worldRoom = null;
     }
     if (!this.charPayload || !this.currentMap) return;
+    const payload = { ...this.charPayload };
+    if (this.lastKnownPos.x !== undefined && this.lastKnownPos.map === this.currentMap) {
+      payload.x = this.lastKnownPos.x;
+      payload.y = this.lastKnownPos.y;
+    }
     try {
-      this.worldRoom = await this.client.joinOrCreate(`world_${this.currentMap}`, this.charPayload);
+      this.worldRoom = await this.client.joinOrCreate(`world_${this.currentMap}`, payload);
       this.installLifecycle();
       this.startHeartbeat();
       this.onReconnected?.();
@@ -77,13 +85,17 @@ export class NetClient {
       await new Promise(r => setTimeout(r, delay));
       try {
         if (token && attempt === 0) {
-          // First try: use Colyseus reconnection (preserves player state on server)
           console.log('[NetClient] reconnecting with token…');
           this.worldRoom = await (this.client as any).reconnect(token);
         } else {
-          // Fallback: fresh join
+          // Fallback: fresh join with last known position so server doesn't respawn at STARTING
+          const payload = { ...this.charPayload };
+          if (this.lastKnownPos.x !== undefined && this.lastKnownPos.map === this.currentMap) {
+            payload.x = this.lastKnownPos.x;
+            payload.y = this.lastKnownPos.y;
+          }
           console.log(`[NetClient] reconnect attempt ${attempt + 1} → ${this.currentMap}`);
-          this.worldRoom = await this.client.joinOrCreate(`world_${this.currentMap}`, this.charPayload);
+          this.worldRoom = await this.client.joinOrCreate(`world_${this.currentMap}`, payload);
         }
         this.installLifecycle();
         this.startHeartbeat();

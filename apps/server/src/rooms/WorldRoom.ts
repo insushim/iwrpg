@@ -96,8 +96,19 @@ export class WorldRoom extends Room<WorldState> {
     player.classId = (options.classId ?? 'iron-sentinel') as ClassId;
     player.level = options.level ?? 1;
     player.exp = options.exp ?? 0;
-    player.x = options.x ?? STARTING_X;
-    player.y = options.y ?? STARTING_Y;
+    // Validate provided x/y against this map's bounds + collision; only accept if walkable
+    const mapDef = getMapDef(this.mapId);
+    const requestedX = typeof options.x === 'number' ? options.x : null;
+    const requestedY = typeof options.y === 'number' ? options.y : null;
+    let usePos = { x: STARTING_X, y: STARTING_Y };
+    if (mapDef && requestedX !== null && requestedY !== null
+        && requestedX > 0 && requestedX < mapDef.width - 1
+        && requestedY > 0 && requestedY < mapDef.height - 1
+        && mapDef.collision[requestedY]?.[requestedX] !== 1) {
+      usePos = { x: requestedX, y: requestedY };
+    }
+    player.x = usePos.x;
+    player.y = usePos.y;
     player.currentMap = this.mapId;
     player.gold = options.gold ?? 100;
     player.alignment = options.alignment ?? 0;

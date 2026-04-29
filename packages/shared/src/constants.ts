@@ -38,7 +38,7 @@ export const ALL_MAP_IDS = [
 
 export const STARTING_MAP = 'aurora_town';
 export const STARTING_X = 30;
-export const STARTING_Y = 30;
+export const STARTING_Y = 36; // moved south off the fountain (fountain at cy=30 in aurora_town)
 
 export const TOPIC_IDS = [
   'school','family','food','animal','body','nature','weather','color','number','time',
