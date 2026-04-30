@@ -134,8 +134,11 @@ export class WorldScene extends Phaser.Scene {
 
     this.setupInput();
     this.bindNetwork();
-    // Try to read mapId from world room state when ready; default to aurora_town
-    const initialMap = (NetClient.inst.worldRoom?.state as any)?.mapId || 'aurora_town';
+    // Authoritative map id (synced when joinWorld succeeds; state.mapId is unreliable
+    // immediately after scene.restart since Colyseus state needs a tick to populate).
+    const initialMap = NetClient.inst.currentMap
+      || (NetClient.inst.worldRoom?.state as any)?.mapId
+      || 'aurora_town';
     this.renderTiles(initialMap);
     this.renderScenery(initialMap);
     this.renderNPCs(initialMap);
@@ -165,22 +168,25 @@ export class WorldScene extends Phaser.Scene {
       position: fixed; top: 8px; right: 320px; z-index: 9999;
       background: #2A1810; color: #FCD34D; border: 1px solid #C9A227;
       padding: 6px 10px; border-radius: 4px; cursor: pointer;
-      font: 12px Cinzel, serif; opacity: 0.85;`;
+      font: 12px Cinzel, serif; opacity: 0.85;
+      display: none;`;
     btn.onclick = async () => {
       btn.disabled = true;
       btn.textContent = '⟳ 재접속중…';
-      try {
-        await NetClient.inst.forceReconnect(); // full WS close + rejoin
-        // onReconnected fires scene.restart() which re-installs the button
-      } catch (e) {
-        console.warn(e);
-      } finally {
-        btn.disabled = false;
-        btn.textContent = '⟲ 재접속';
-      }
+      try { await NetClient.inst.forceReconnect(); }
+      catch (e) { console.warn(e); }
+      finally { btn.disabled = false; btn.textContent = '⟲ 재접속'; }
     };
     document.body.appendChild(btn);
-    this.events.once('shutdown', () => btn.remove());
+    // Auto-show only if WS goes down for >12s (user said: stop showing reconnect noise)
+    let hiddenSince = Date.now();
+    const watcher = setInterval(() => {
+      const room = NetClient.inst.worldRoom;
+      const me = (room?.state as any)?.players?.get(this.myCharId);
+      if (room && me) { hiddenSince = Date.now(); btn.style.display = 'none'; return; }
+      if (Date.now() - hiddenSince > 12000) btn.style.display = 'inline-block';
+    }, 2000);
+    this.events.once('shutdown', () => { clearInterval(watcher); btn.remove(); });
   }
 
   private bindNetwork() {
@@ -226,7 +232,7 @@ export class WorldScene extends Phaser.Scene {
         if (key === this.myCharId) {
           NetClient.inst.lastKnownPos = {
             x: player.x, y: player.y,
-            map: (NetClient.inst.worldRoom?.state as any)?.mapId,
+            map: NetClient.inst.currentMap,
           };
         }
       });
@@ -485,33 +491,35 @@ export class WorldScene extends Phaser.Scene {
       vignette: number; bloom: number; particle?: 'mote' | 'ash' | 'snow';
       particleTint: number; particleAlpha: number; ambientLightColor?: number;
     };
+    // Toned-down values — bloom + vignette were too aggressive (color smearing).
+    // Goal: subtle cinematic depth, NOT washed-out fog. Bloom now <0.4 max.
     const town: Biome = {
-      bg: 0x1B1F2A, tint: [1.04, 1.0, 0.92, 1.0], vignette: 0.65,
-      bloom: 0.7, particle: 'mote', particleTint: 0xFCD34D, particleAlpha: 0.4,
+      bg: 0x1B1F2A, tint: [1.0, 1.0, 1.0, 1.0], vignette: 0.4,
+      bloom: 0.18, particle: 'mote', particleTint: 0xFCD34D, particleAlpha: 0.25,
     };
     const cave: Biome = {
-      bg: 0x06080C, tint: [0.85, 0.88, 0.95, 1.0], vignette: 0.85,
-      bloom: 0.4, particle: 'mote', particleTint: 0x9CA3AF, particleAlpha: 0.25,
+      bg: 0x06080C, tint: [1.0, 1.0, 1.0, 1.0], vignette: 0.6,
+      bloom: 0.12, particle: 'mote', particleTint: 0x9CA3AF, particleAlpha: 0.18,
     };
     const ruin: Biome = {
-      bg: 0x14181F, tint: [0.92, 0.94, 1.02, 1.0], vignette: 0.8,
-      bloom: 0.55, particle: 'ash', particleTint: 0xCBD5E1, particleAlpha: 0.3,
+      bg: 0x14181F, tint: [1.0, 1.0, 1.0, 1.0], vignette: 0.5,
+      bloom: 0.15, particle: 'ash', particleTint: 0xCBD5E1, particleAlpha: 0.2,
     };
     const fire: Biome = {
-      bg: 0x2A0E08, tint: [1.15, 0.95, 0.78, 1.0], vignette: 0.75,
-      bloom: 1.0, particle: 'ash', particleTint: 0xF59E0B, particleAlpha: 0.45,
+      bg: 0x2A0E08, tint: [1.0, 1.0, 1.0, 1.0], vignette: 0.5,
+      bloom: 0.28, particle: 'ash', particleTint: 0xF59E0B, particleAlpha: 0.3,
     };
     const ice: Biome = {
-      bg: 0x0F1A28, tint: [0.95, 1.0, 1.15, 1.0], vignette: 0.7,
-      bloom: 0.6, particle: 'snow', particleTint: 0xE0F2FE, particleAlpha: 0.5,
+      bg: 0x0F1A28, tint: [1.0, 1.0, 1.0, 1.0], vignette: 0.4,
+      bloom: 0.18, particle: 'snow', particleTint: 0xE0F2FE, particleAlpha: 0.35,
     };
     const field: Biome = {
-      bg: 0x121A14, tint: [1.0, 1.04, 0.95, 1.0], vignette: 0.65,
-      bloom: 0.5, particle: 'mote', particleTint: 0xCFE9A8, particleAlpha: 0.3,
+      bg: 0x121A14, tint: [1.0, 1.0, 1.0, 1.0], vignette: 0.4,
+      bloom: 0.15, particle: 'mote', particleTint: 0xCFE9A8, particleAlpha: 0.2,
     };
     const aether: Biome = {
-      bg: 0x14082A, tint: [1.05, 0.9, 1.2, 1.0], vignette: 0.85,
-      bloom: 1.2, particle: 'mote', particleTint: 0xC084FC, particleAlpha: 0.5,
+      bg: 0x14082A, tint: [1.0, 1.0, 1.0, 1.0], vignette: 0.55,
+      bloom: 0.32, particle: 'mote', particleTint: 0xC084FC, particleAlpha: 0.35,
     };
     const biome: Biome =
       mapId.includes('cave') || mapId.includes('mine') || mapId.includes('caverns') ? cave
@@ -522,14 +530,14 @@ export class WorldScene extends Phaser.Scene {
       : mapId.includes('town') || mapId.includes('haven') ? town
       : field;
     cam.setBackgroundColor(biome.bg);
-    // Camera-level postFX (Phaser 3.60+) — vignette + bloom + per-biome color grade
+    // Subtle vignette only (bloom was smearing colors). PostFX-tolerant Phaser 3.60+.
     try {
       const fx = (cam as any).postFX;
       fx?.clear();
       fx?.addVignette(0.5, 0.5, biome.vignette, 0.55);
-      fx?.addBloom(0xFFFFFF, biome.tint[0], biome.tint[1], 1.2, biome.bloom, 4);
-      fx?.addColorMatrix().brightness(1.0).saturate(0.15).hue(0);
-    } catch (e) { /* postFX unsupported on this Phaser build */ }
+      // Bloom kept very low — at <0.35 it adds depth without color bleed.
+      if (biome.bloom > 0.05) fx?.addBloom(0xFFFFFF, 1.0, 1.0, 1.0, biome.bloom, 2);
+    } catch { /* postFX unsupported */ }
     // Ambient particles (motes/ash/snow) — drift across viewport
     const W = this.mapWidth * TILE_SIZE;
     const H = this.mapHeight * TILE_SIZE;
@@ -596,7 +604,7 @@ export class WorldScene extends Phaser.Scene {
     if (!room) return;
     const me = (room.state as any)?.players?.get(this.myCharId);
     if (!me) return;
-    const mapId = (room.state as any)?.mapId;
+    const mapId = NetClient.inst.currentMap || (room.state as any)?.mapId;
     const map = ALL_MAPS[mapId];
     if (!map?.portals) { this.lastPortalId = ''; return; }
     let hit: any = null;
@@ -690,13 +698,7 @@ export class WorldScene extends Phaser.Scene {
       strokeThickness: 3,
     }).setOrigin(0.5);
     c.add([shadow, body, label]);
-    if (isMe) {
-      c.setDepth(100);
-      // Subtle gold rim glow on local hero — cinematic touch
-      const aura = this.add.image(0, 0, 'fx_glow').setScale(2.4).setAlpha(0.18).setBlendMode(Phaser.BlendModes.ADD).setTint(0xFCD34D);
-      c.addAt(aura, 0);
-      this.tweens.add({ targets: aura, scale: 2.7, alpha: 0.28, yoyo: true, repeat: -1, duration: 1400, ease: 'Sine.inOut' });
-    }
+    if (isMe) c.setDepth(100);
     return {
       container: c, body, shadow, label, isMe,
       lastX: player.x, lastY: player.y,

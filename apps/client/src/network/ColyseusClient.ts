@@ -5,7 +5,9 @@ export class NetClient {
   client: Client;
   worldRoom: Room | null = null;
   charPayload: any = null;
-  private currentMap: string = '';
+  /** Authoritative map id — set when joinWorld succeeds. Use this instead of state.mapId
+   *  during scene.restart() because state takes 1 frame to sync after a fresh join. */
+  currentMap: string = '';
   private reconnecting = false;
   private heartbeatTimer: any = null;
   private listeners: Array<{ type: string; cb: (msg: any) => void }> = [];
