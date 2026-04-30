@@ -457,28 +457,40 @@ export class WorldScene extends Phaser.Scene {
       const isMoving = (now - sprite.lastWalkAt) < 350;
       const { row, flipX } = dirToWalkRow(sprite.dir);
       sprite.body.setFlipX(flipX);
+
+      // Procedural walk motion — bounce + sway. Works even if atlas frames are
+      // near-identical (gpt-image-2 often doesn't follow "4 walk-cycle frames"
+      // correctly, so we add visible motion in code).
       if (isMoving) {
-        if (now - sprite.lastFrameAt > 150) {
+        const phase = now / 90; // step rhythm
+        const bounce = Math.abs(Math.sin(phase)) * -4; // body lifts up to 4px
+        const sway = Math.sin(phase) * 0.05; // ±0.05 rad (~3°) torso sway
+        sprite.body.setY(bounce);
+        sprite.body.setRotation(flipX ? -sway : sway);
+      } else {
+        // Smooth return to neutral
+        sprite.body.setY(sprite.body.y * 0.7);
+        sprite.body.setRotation(sprite.body.rotation * 0.7);
+      }
+
+      if (isMoving) {
+        if (now - sprite.lastFrameAt > 130) {
           sprite.walkFrame = (sprite.walkFrame + 1) % 4;
           sprite.lastFrameAt = now;
         }
-        // Primary: P10 walk_{front/side/back}_{0..3}
         const wKey = `char_${cls}_walk_${row}_${sprite.walkFrame}`;
         if (this.textures.exists(wKey)) {
           sprite.body.setTexture(wKey);
           continue;
         }
-        // Fallback: walk_{dir} 1-frame (no animation but at least direction)
         const fallbackKey = `char_${cls}_walk_${sprite.dir}`;
         if (this.textures.exists(fallbackKey)) {
           sprite.body.setTexture(fallbackKey);
           continue;
         }
-        // Final fallback: idle
         const idleKey = `char_${cls}`;
         if (this.textures.exists(idleKey)) sprite.body.setTexture(idleKey);
       } else {
-        // Idle: standing pose (frame 0) of last facing direction
         const idleKey = `char_${cls}_walk_${row}_0`;
         if (this.textures.exists(idleKey)) {
           sprite.body.setTexture(idleKey);
