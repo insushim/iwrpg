@@ -82,6 +82,7 @@ export class WorldRoom extends Room<WorldState> {
     this.onMessage('change_map', (client, msg: any) => this.handleChangeMap(client, msg));
     this.onMessage('transform', (client, msg: any) => this.handleTransform(client, msg));
     this.onMessage('interact_npc', (client, msg: any) => this.handleInteractNPC(client, msg));
+    this.onMessage('quiz_cancel', (client) => this.handleQuizCancel(client));
     this.onMessage('gacha_request_challenge', (client, msg: any) => this.handleGachaRequest(client, msg));
     this.onMessage('gacha_answer_challenge', (client, msg: any) => this.handleGachaAnswer(client, msg));
     this.onMessage('gacha_open_box', (client, msg: any) => this.handleGachaOpen(client, msg));
@@ -290,7 +291,10 @@ export class WorldRoom extends Room<WorldState> {
       const result = this.quiz.resolveAnswer(e.playerId, e.quizId, -1);
       if (result) {
         const player = this.state.players.get(e.playerId);
-        if (player) player.isInQuiz = false;
+        if (player) {
+          player.isInQuiz = false;
+          (player as any)._quizLockedAt = 0;
+        }
         this.broadcastQuizResult(e.playerId, result, false);
       }
     }
@@ -308,7 +312,23 @@ export class WorldRoom extends Room<WorldState> {
 
   private handleMove(client: Client, msg: { tx: number; ty: number }) {
     const p = this.getPlayer(client);
-    if (!p || p.isInQuiz) return;
+    if (!p) return;
+    // Quiz lock: tell client explicitly so the player isn't silently frozen.
+    // Fail-safe: auto-cancel after 8s grace if a stale quiz is blocking movement —
+    // catches cases where the modal was dismissed without sending an answer.
+    if (p.isInQuiz) {
+      const now = Date.now();
+      const lockedAt = (p as any)._quizLockedAt ?? 0;
+      if (lockedAt && now - lockedAt > 8000) {
+        // Stale quiz lock — force release
+        p.isInQuiz = false;
+        this.quiz.cleanupPlayer(p.id);
+        client.send('system_msg', { severity: 'info', text_ko: '퀴즈 응답 시간이 만료되어 이동을 재개합니다.' });
+      } else {
+        client.send('quiz_lock_warn', { remainingMs: lockedAt ? Math.max(0, 8000 - (now - lockedAt)) : 5000 });
+        return;
+      }
+    }
     const map = getMapDef(p.currentMap);
     if (!map) return;
     const tx = clamp(msg.tx, 1, map.width - 2);
@@ -337,6 +357,7 @@ export class WorldRoom extends Room<WorldState> {
     const quizPrompt = this.quiz.startQuiz(p.id, p.grade as any, target.id);
     if (!quizPrompt) return;
     p.isInQuiz = true;
+    (p as any)._quizLockedAt = Date.now();
 
     const display = quizPrompt.mode === 'en2ko' ? quizPrompt.word.word : quizPrompt.word.meaning_ko;
     client.send('quiz_prompt', {
@@ -353,12 +374,24 @@ export class WorldRoom extends Room<WorldState> {
     });
   }
 
+  private handleQuizCancel(client: Client) {
+    const p = this.getPlayer(client);
+    if (!p) return;
+    if (p.isInQuiz) {
+      this.quiz.cleanupPlayer(p.id);
+      p.isInQuiz = false;
+      (p as any)._quizLockedAt = 0;
+      client.send('system_msg', { severity: 'info', text_ko: '퀴즈를 취소했습니다.' });
+    }
+  }
+
   private handleQuizAnswer(client: Client, msg: { quizId: string; choice: number }) {
     const p = this.getPlayer(client);
     if (!p) return;
     const result = this.quiz.resolveAnswer(p.id, msg.quizId, msg.choice);
     if (!result) return;
     p.isInQuiz = false;
+    (p as any)._quizLockedAt = 0;
     const monster = this.state.monsters.get(result.monsterId);
     let damage = 0;
     let killed = false;

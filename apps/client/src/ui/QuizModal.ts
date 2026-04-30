@@ -54,9 +54,14 @@ export class QuizModal {
       btn.addEventListener('click', () => this.answer(parseInt(btn.dataset.idx!, 10)));
     });
 
-    // Keyboard shortcuts 1-4
+    // Keyboard shortcuts 1-4 + Esc to cancel (frees movement immediately)
     const keyHandler = (e: KeyboardEvent) => {
       if (this.answered) return;
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        this.cancel();
+        return;
+      }
       const idx = ['1', '2', '3', '4'].indexOf(e.key);
       if (idx >= 0) this.answer(idx);
     };
@@ -86,6 +91,14 @@ export class QuizModal {
         if (!this.answered) this.answer(-1);
       }
     }, 50);
+  }
+
+  /** User pressed Esc — cancel the quiz on the server so movement unfreezes immediately. */
+  private static cancel() {
+    if (!this.current || this.answered) return;
+    this.answered = true;
+    NetClient.inst.send('quiz_cancel', {});
+    this.cleanup();
   }
 
   private static answer(choice: number) {

@@ -343,6 +343,16 @@ export class WorldScene extends Phaser.Scene {
       AudioManager.playSfx(rarity === 'legendary' || rarity === 'unique' ? 'gacha_rare' : 'gacha_open');
       this.events.emit('gacha:box_result', msg.result);
     });
+    room.onMessage('quiz_lock_warn', (msg: any) => {
+      // Server is silently rejecting moves because a quiz is still pending.
+      // Surface it once so the user isn't confused by frozen movement.
+      const lastWarn = (this as any)._lastQuizWarn ?? 0;
+      const now = Date.now();
+      if (now - lastWarn > 4000) {
+        (this as any)._lastQuizWarn = now;
+        this.events.emit('hud:toast', { text: '퀴즈 응답 중이라 이동할 수 없습니다 (Esc로 취소)', kind: 'warn' });
+      }
+    });
     room.onMessage('change_map_request', (msg: any) => {
       // Reconnect to new map room, spawning at the portal exit coordinates
       NetClient.inst.joinWorld(msg.targetMap, { x: msg.x, y: msg.y }).then(() => {
