@@ -179,9 +179,13 @@ export class BootScene extends Phaser.Scene {
       this.load.image(`spell_${i}`, `assets/img/effects/spell_${i}.png`);
     }
 
-    // Mark loaders as optional (don't error on 404)
-    this.load.on('loaderror', (file: any) => {
-      console.warn('[BootScene] missing asset:', file.key, '— procedural fallback');
+    // 404s are expected — many codex slots aren't filled yet and procedural fallbacks
+    // cover them. Log nothing per-file (was flooding the console with hundreds of warns).
+    // Summary only at end of preload.
+    let missing = 0;
+    this.load.on('loaderror', () => { missing++; });
+    this.load.once('complete', () => {
+      if (missing > 0) console.info(`[BootScene] ${missing} optional assets missing — procedural fallbacks used`);
     });
   }
 
