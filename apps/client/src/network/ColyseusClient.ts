@@ -15,6 +15,13 @@ export class NetClient {
   onDisconnected?: () => void;
   /** Track last known position so we can resume there on reconnect (avoid respawn at STARTING). */
   lastKnownPos: { x?: number; y?: number; map?: string } = {};
+  // ── Diagnostics (read by debug overlay) ───────────────────────────────────
+  lastSendAt = 0;
+  lastSendType = '';
+  lastStateAt = 0;
+  pingRttMs = -1;
+  private lastPingSentAt = 0;
+  reconnectCount = 0;
 
   /** Force a full reconnect — closes room, joins fresh (with last known position), fires onReconnected. */
   async forceReconnect(): Promise<void> {
@@ -73,7 +80,6 @@ export class NetClient {
     this.worldRoom.onLeave((code: number) => {
       console.warn('[NetClient] room left, code=', code);
       this.stopHeartbeat();
-      // 1000 = normal close (changing map intentionally). 1006 = abnormal (network drop).
       if (code !== 1000 && this.charPayload && this.currentMap) {
         this.attemptReconnect();
       }
@@ -81,6 +87,13 @@ export class NetClient {
     this.worldRoom.onError((code: number, msg?: string) => {
       console.warn('[NetClient] room error', code, msg);
     });
+    // Pong → measure RTT
+    this.worldRoom.onMessage('pong', () => {
+      this.pingRttMs = Date.now() - this.lastPingSentAt;
+      this.lastStateAt = Date.now();
+    });
+    // Any state patch counts as "state activity"
+    this.worldRoom.onStateChange(() => { this.lastStateAt = Date.now(); });
   }
 
   private async attemptReconnect() {
@@ -109,6 +122,7 @@ export class NetClient {
         this.installLifecycle();
         this.startHeartbeat();
         this.reconnecting = false;
+        this.reconnectCount++;
         this.onReconnected?.();
         return;
       } catch (e) {
@@ -121,9 +135,13 @@ export class NetClient {
 
   private startHeartbeat() {
     this.stopHeartbeat();
+    // Ping every 5s for tighter RTT tracking + faster freeze detection
     this.heartbeatTimer = setInterval(() => {
-      try { this.worldRoom?.send('ping', {}); } catch {}
-    }, 15000);
+      try {
+        this.lastPingSentAt = Date.now();
+        this.worldRoom?.send('ping', {});
+      } catch {}
+    }, 5000);
   }
   private stopHeartbeat() {
     if (this.heartbeatTimer) { clearInterval(this.heartbeatTimer); this.heartbeatTimer = null; }
@@ -131,10 +149,19 @@ export class NetClient {
 
   send(type: string, msg: any) {
     if (this.worldRoom && !this.reconnecting) {
-      try { this.worldRoom.send(type, msg); } catch (e) {
+      try {
+        this.worldRoom.send(type, msg);
+        this.lastSendAt = Date.now();
+        this.lastSendType = type;
+      } catch (e) {
         console.warn('[NetClient] send failed', type, e);
       }
     }
+  }
+
+  /** Best-effort WS readyState — undefined if room not joined. */
+  get wsReadyState(): number | undefined {
+    return (this.worldRoom?.connection as any)?.transport?.ws?.readyState;
   }
 
   on(type: string, cb: (msg: any) => void) {

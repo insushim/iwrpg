@@ -156,6 +156,60 @@ export class WorldScene extends Phaser.Scene {
 
     // Manual recovery button for stuck-state escape hatch
     this.installResetButton();
+    // Diagnostic overlay (toggle with backtick `)
+    this.installDebugOverlay();
+  }
+
+  private installDebugOverlay() {
+    const existing = document.getElementById('rwc-debug');
+    if (existing) existing.remove();
+    const panel = document.createElement('div');
+    panel.id = 'rwc-debug';
+    panel.style.cssText = `
+      position: fixed; top: 8px; left: 8px; z-index: 9999;
+      background: rgba(10,10,15,0.92); color: #FCD34D;
+      border: 1px solid #C9A227; padding: 8px 10px; border-radius: 4px;
+      font: 11px/1.5 'Menlo', monospace; min-width: 240px;
+      pointer-events: none; display: none; white-space: pre;`;
+    document.body.appendChild(panel);
+
+    const tickKey = (e: KeyboardEvent) => {
+      if (e.key === '`' || e.key === '~') {
+        e.preventDefault();
+        panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+      }
+    };
+    document.addEventListener('keydown', tickKey);
+
+    const ticker = setInterval(() => {
+      if (panel.style.display === 'none') return;
+      const net = NetClient.inst;
+      const now = Date.now();
+      const sinceSend = net.lastSendAt ? `${now - net.lastSendAt}ms` : '—';
+      const sinceState = net.lastStateAt ? `${now - net.lastStateAt}ms` : '—';
+      const ws = net.wsReadyState;
+      const wsTxt = ws === 0 ? 'CONNECTING' : ws === 1 ? 'OPEN' : ws === 2 ? 'CLOSING' : ws === 3 ? 'CLOSED' : '?';
+      const me = (net.worldRoom?.state as any)?.players?.get(this.myCharId);
+      const inQuiz = me?.isInQuiz ?? false;
+      const ping = net.pingRttMs >= 0 ? `${net.pingRttMs}ms` : '—';
+      const map = net.currentMap || '—';
+      panel.textContent =
+        `RWC DEBUG (\` to toggle)\n` +
+        `WS:        ${wsTxt}\n` +
+        `Ping RTT:  ${ping}\n` +
+        `Last send: ${sinceSend} (${net.lastSendType || '—'})\n` +
+        `Last sync: ${sinceState}\n` +
+        `Map:       ${map}\n` +
+        `Pos:       ${me ? `${me.x}, ${me.y}` : '—'}\n` +
+        `In Quiz:   ${inQuiz ? 'YES — Esc to cancel' : 'no'}\n` +
+        `Reconns:   ${net.reconnectCount}`;
+    }, 250);
+
+    this.events.once('shutdown', () => {
+      clearInterval(ticker);
+      document.removeEventListener('keydown', tickKey);
+      panel.remove();
+    });
   }
 
   private installResetButton() {
