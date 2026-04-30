@@ -48,12 +48,19 @@ export class NetClient {
 
   setCharPayload(p: any) { this.charPayload = p; }
 
-  async joinWorld(mapId: string): Promise<Room> {
+  async joinWorld(mapId: string, spawnAt?: { x: number; y: number }): Promise<Room> {
     if (this.worldRoom) {
       try { await this.worldRoom.leave(); } catch {}
     }
-    this.worldRoom = await this.client.joinOrCreate(`world_${mapId}`, this.charPayload);
+    const payload = { ...this.charPayload };
+    if (spawnAt) {
+      payload.x = spawnAt.x;
+      payload.y = spawnAt.y;
+    }
+    this.worldRoom = await this.client.joinOrCreate(`world_${mapId}`, payload);
     this.currentMap = mapId;
+    // Update lastKnownPos to the portal target so subsequent reconnects don't snap to STARTING
+    if (spawnAt) this.lastKnownPos = { x: spawnAt.x, y: spawnAt.y, map: mapId };
     this.installLifecycle();
     this.startHeartbeat();
     return this.worldRoom;

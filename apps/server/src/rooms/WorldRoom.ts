@@ -60,7 +60,8 @@ export class WorldRoom extends Room<WorldState> {
     this.registerHandlers();
 
     this.tickInterval = setInterval(() => this.tick(), TICK_MS);
-    this.setPatchRate(50);
+    // Lower patch rate (50→30ms) → snappier client position updates → less perceived "cuts"
+    this.setPatchRate(30);
     console.log(`[WorldRoom] Created room for ${this.mapId} (${def.name_ko})`);
   }
 
@@ -670,12 +671,20 @@ export class WorldRoom extends Room<WorldState> {
     const map = getMapDef(p.currentMap);
     const portal = map?.portals.find(pt => pt.id === msg.portalId);
     if (!portal) return;
-    const dx = Math.abs(p.x - portal.x);
-    const dy = Math.abs(p.y - portal.y);
-    if (dx + dy > 3) return;
-    // Tell client to switch room — Colyseus rooms are 1-per-map, so client must reconnect
+    // AABB containment + 1-tile tolerance (player can stand at the edge)
+    const inX = p.x >= portal.x - 1 && p.x <= portal.x + portal.w;
+    const inY = p.y >= portal.y - 1 && p.y <= portal.y + portal.h;
+    if (!inX || !inY) {
+      console.log(`[WorldRoom] portal ${portal.id} reject — player at ${p.x},${p.y}, portal ${portal.x},${portal.y} ${portal.w}x${portal.h}`);
+      return;
+    }
+    console.log(`[WorldRoom] ${p.name} → ${portal.target_map} via ${portal.id}`);
     client.send('system_msg', { severity: 'info', text_ko: `${portal.label_ko}(으)로 이동합니다…` });
-    client.send('change_map_request', { targetMap: portal.target_map, x: portal.target_x, y: portal.target_y });
+    client.send('change_map_request', {
+      targetMap: portal.target_map,
+      x: portal.target_x,
+      y: portal.target_y,
+    });
     p.currentMap = portal.target_map;
   }
 

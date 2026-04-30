@@ -332,6 +332,55 @@ export class BootScene extends Phaser.Scene {
     t.strokeCircle(16, 16, 14);
     t.generateTexture('tap_target', 32, 32);
     t.destroy();
+
+    // ========= FX textures (Lineage-Remaster pass) =========
+    // Soft drop shadow ellipse — feathered radial alpha
+    const sh = this.add.graphics();
+    for (let r = 18; r >= 0; r--) {
+      const alpha = 0.35 * (1 - r / 18) ** 1.6;
+      sh.fillStyle(0x000000, alpha);
+      sh.fillEllipse(24, 12, r * 2 + 2, r + 2);
+    }
+    sh.generateTexture('fx_shadow', 48, 24);
+    sh.destroy();
+
+    // White soft glow particle (additive blend)
+    const gl = this.add.graphics();
+    for (let r = 12; r >= 0; r--) {
+      const a = (1 - r / 12) ** 2;
+      gl.fillStyle(0xFFFFFF, a * 0.6);
+      gl.fillCircle(12, 12, r);
+    }
+    gl.generateTexture('fx_glow', 24, 24);
+    gl.destroy();
+
+    // Warm flame glow particle (orange)
+    const wg = this.add.graphics();
+    for (let r = 12; r >= 0; r--) {
+      const a = (1 - r / 12) ** 2;
+      wg.fillStyle(0xFFB347, a * 0.7);
+      wg.fillCircle(12, 12, r);
+    }
+    wg.generateTexture('fx_flame', 24, 24);
+    wg.destroy();
+
+    // Dust particle for footsteps (small tan circle)
+    const du = this.add.graphics();
+    du.fillStyle(0xC9B084, 0.7);
+    du.fillCircle(4, 4, 3);
+    du.fillStyle(0xE5D4A8, 0.4);
+    du.fillCircle(3, 3, 2);
+    du.generateTexture('fx_dust', 8, 8);
+    du.destroy();
+
+    // Sparkle (bright white star) for legendary/levelup
+    const sp = this.add.graphics();
+    sp.fillStyle(0xFFFFFF, 1);
+    sp.fillCircle(6, 6, 2);
+    sp.fillStyle(0xFFFFFF, 0.4);
+    sp.fillCircle(6, 6, 5);
+    sp.generateTexture('fx_sparkle', 12, 12);
+    sp.destroy();
   }
 
   private makeColorTile(key: string, primary: number, accent: number) {

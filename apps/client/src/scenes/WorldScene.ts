@@ -10,15 +10,17 @@ import { ALL_NPCS } from '../data/npcs.js';
 interface PlayerSprite {
   container: Phaser.GameObjects.Container;
   body: Phaser.GameObjects.Image;
+  shadow: Phaser.GameObjects.Image;
   label: Phaser.GameObjects.Text;
   isMe: boolean;
   lastX: number;
   lastY: number;
   classId: string;
-  dir: number;        // last facing direction 0..7
-  walkFrame: number;  // current walk-cycle frame 0..3
-  lastWalkAt: number; // ms timestamp of last position change (for idle detection)
-  lastFrameAt: number; // ms timestamp of last frame swap
+  dir: number;
+  walkFrame: number;
+  lastWalkAt: number;
+  lastFrameAt: number;
+  lastDustAt: number;
 }
 
 // Map 8-direction index → 3 walk-atlas rows (front/side/back) + flipX
@@ -89,6 +91,7 @@ function npcAtlasPrefixForMap(mapId: string): string | null {
 interface MonsterSprite {
   container: Phaser.GameObjects.Container;
   body: Phaser.GameObjects.Image;
+  shadow: Phaser.GameObjects.Image;
   selectionRing?: Phaser.GameObjects.Image;
 }
 interface DropSprite { container: Phaser.GameObjects.Container; body: Phaser.GameObjects.Image; }
@@ -108,6 +111,8 @@ export class WorldScene extends Phaser.Scene {
   private walkTarget: { tx: number; ty: number } | null = null;
   private lastMoveSentAt = 0;
   private lastSeenPos = { x: -1, y: -1, t: 0 };
+  private lastPortalSentAt = 0;
+  private lastPortalId = '';
 
   constructor() { super({ key: 'WorldScene' }); }
 
@@ -135,6 +140,7 @@ export class WorldScene extends Phaser.Scene {
     this.renderScenery(initialMap);
     this.renderNPCs(initialMap);
     this.renderPortals(initialMap);
+    this.applyAtmosphere(initialMap);
 
     // Re-bind on reconnect (server preserves state via allowReconnection)
     NetClient.inst.onReconnected = () => {
@@ -191,14 +197,24 @@ export class WorldScene extends Phaser.Scene {
         this.cameras.main.startFollow(sprite.container, true, 0.1, 0.1);
         this.cameras.main.setBounds(0, 0, this.mapWidth * TILE_SIZE, this.mapHeight * TILE_SIZE);
       }
-      // Position + 8-dir walk frame
+      // Position + 8-dir walk frame — tween-smooth between tile snaps to avoid jerk
       $(player).onChange(() => {
         const dx = Math.sign(player.x - sprite.lastX);
         const dy = Math.sign(player.y - sprite.lastY);
-        sprite.container.setPosition(
-          player.x * TILE_SIZE + TILE_SIZE / 2,
-          player.y * TILE_SIZE + TILE_SIZE / 2
-        );
+        const targetX = player.x * TILE_SIZE + TILE_SIZE / 2;
+        const targetY = player.y * TILE_SIZE + TILE_SIZE / 2;
+        // Big jumps (teleport / map change / desync >3 tiles) — snap, no tween
+        const jumpDist = Math.hypot(targetX - sprite.container.x, targetY - sprite.container.y);
+        this.tweens.killTweensOf(sprite.container);
+        if (jumpDist > TILE_SIZE * 3) {
+          sprite.container.setPosition(targetX, targetY);
+        } else {
+          this.tweens.add({
+            targets: sprite.container,
+            x: targetX, y: targetY,
+            duration: 110, ease: 'Linear',
+          });
+        }
         const dir = dirToFrame(dx, dy);
         if (dir >= 0) {
           sprite.dir = dir;
@@ -226,7 +242,12 @@ export class WorldScene extends Phaser.Scene {
       const sprite = this.makeMonsterSprite(m, key);
       this.monsters.set(key, sprite);
       $(m).onChange(() => {
-        sprite.container.setPosition(m.x * TILE_SIZE + TILE_SIZE/2, m.y * TILE_SIZE + TILE_SIZE/2);
+        const tx = m.x * TILE_SIZE + TILE_SIZE/2;
+        const ty = m.y * TILE_SIZE + TILE_SIZE/2;
+        const jump = Math.hypot(tx - sprite.container.x, ty - sprite.container.y);
+        this.tweens.killTweensOf(sprite.container);
+        if (jump > TILE_SIZE * 3) sprite.container.setPosition(tx, ty);
+        else this.tweens.add({ targets: sprite.container, x: tx, y: ty, duration: 200, ease: 'Linear' });
         if (m.aiState === 'dead') {
           this.tweens.add({
             targets: sprite.container,
@@ -317,8 +338,8 @@ export class WorldScene extends Phaser.Scene {
       this.events.emit('gacha:box_result', msg.result);
     });
     room.onMessage('change_map_request', (msg: any) => {
-      // Reconnect to new map room
-      NetClient.inst.joinWorld(msg.targetMap).then(() => {
+      // Reconnect to new map room, spawning at the portal exit coordinates
+      NetClient.inst.joinWorld(msg.targetMap, { x: msg.x, y: msg.y }).then(() => {
         this.scene.restart();
       });
     });
@@ -386,15 +407,20 @@ export class WorldScene extends Phaser.Scene {
 
     this.events.on('update', () => {
       const now = this.time.now;
-      if (now - this.lastMoveSentAt < 140) return;
+      // Portal entry check runs every frame (cheap), independent of move throttle
+      this.tickPortalCheck(now);
+      if (now - this.lastMoveSentAt < 120) return;
       const me = (NetClient.inst.worldRoom?.state as any)?.players?.get(this.myCharId);
       if (!me) {
-        // Watchdog: if me undefined for >8s, force scene restart to re-bind
+        // Tolerant watchdog: only restart if "me" is missing for an extreme duration
+        // (30s) AND the WS room itself is gone. False positives during normal Render
+        // lag previously caused respawn loops.
         if (this.lastSeenPos.t === 0) this.lastSeenPos.t = now;
-        if (now - this.lastSeenPos.t > 8000) {
-          console.warn('[WorldScene] me undefined too long, restarting scene');
+        const gone = !NetClient.inst.worldRoom;
+        if (gone && now - this.lastSeenPos.t > 30000) {
+          console.warn('[WorldScene] room gone for 30s — soft reconnect');
           this.lastSeenPos.t = 0;
-          this.scene.restart();
+          NetClient.inst.forceReconnect().catch(() => {});
         }
         return;
       }
@@ -450,6 +476,145 @@ export class WorldScene extends Phaser.Scene {
     this.events.on('update', () => this.tickPlayerAnimations());
   }
 
+  /** Per-biome cinematic atmosphere — postFX, ambient particles, color grading. */
+  private applyAtmosphere(mapId: string) {
+    const cam = this.cameras.main;
+    // Biome → palette + ambient
+    type Biome = {
+      bg: number; tint: [number, number, number, number];
+      vignette: number; bloom: number; particle?: 'mote' | 'ash' | 'snow';
+      particleTint: number; particleAlpha: number; ambientLightColor?: number;
+    };
+    const town: Biome = {
+      bg: 0x1B1F2A, tint: [1.04, 1.0, 0.92, 1.0], vignette: 0.65,
+      bloom: 0.7, particle: 'mote', particleTint: 0xFCD34D, particleAlpha: 0.4,
+    };
+    const cave: Biome = {
+      bg: 0x06080C, tint: [0.85, 0.88, 0.95, 1.0], vignette: 0.85,
+      bloom: 0.4, particle: 'mote', particleTint: 0x9CA3AF, particleAlpha: 0.25,
+    };
+    const ruin: Biome = {
+      bg: 0x14181F, tint: [0.92, 0.94, 1.02, 1.0], vignette: 0.8,
+      bloom: 0.55, particle: 'ash', particleTint: 0xCBD5E1, particleAlpha: 0.3,
+    };
+    const fire: Biome = {
+      bg: 0x2A0E08, tint: [1.15, 0.95, 0.78, 1.0], vignette: 0.75,
+      bloom: 1.0, particle: 'ash', particleTint: 0xF59E0B, particleAlpha: 0.45,
+    };
+    const ice: Biome = {
+      bg: 0x0F1A28, tint: [0.95, 1.0, 1.15, 1.0], vignette: 0.7,
+      bloom: 0.6, particle: 'snow', particleTint: 0xE0F2FE, particleAlpha: 0.5,
+    };
+    const field: Biome = {
+      bg: 0x121A14, tint: [1.0, 1.04, 0.95, 1.0], vignette: 0.65,
+      bloom: 0.5, particle: 'mote', particleTint: 0xCFE9A8, particleAlpha: 0.3,
+    };
+    const aether: Biome = {
+      bg: 0x14082A, tint: [1.05, 0.9, 1.2, 1.0], vignette: 0.85,
+      bloom: 1.2, particle: 'mote', particleTint: 0xC084FC, particleAlpha: 0.5,
+    };
+    const biome: Biome =
+      mapId.includes('cave') || mapId.includes('mine') || mapId.includes('caverns') ? cave
+      : mapId.includes('citadel') || mapId.includes('temple') || mapId.includes('ruined') ? ruin
+      : mapId.includes('pyre') || mapId.includes('drake') || mapId.includes('fortress') ? fire
+      : mapId.includes('whisper') || mapId.includes('mistwail') ? ice
+      : mapId.includes('aether') || mapId.includes('rift') ? aether
+      : mapId.includes('town') || mapId.includes('haven') ? town
+      : field;
+    cam.setBackgroundColor(biome.bg);
+    // Camera-level postFX (Phaser 3.60+) — vignette + bloom + per-biome color grade
+    try {
+      const fx = (cam as any).postFX;
+      fx?.clear();
+      fx?.addVignette(0.5, 0.5, biome.vignette, 0.55);
+      fx?.addBloom(0xFFFFFF, biome.tint[0], biome.tint[1], 1.2, biome.bloom, 4);
+      fx?.addColorMatrix().brightness(1.0).saturate(0.15).hue(0);
+    } catch (e) { /* postFX unsupported on this Phaser build */ }
+    // Ambient particles (motes/ash/snow) — drift across viewport
+    const W = this.mapWidth * TILE_SIZE;
+    const H = this.mapHeight * TILE_SIZE;
+    if (biome.particle) {
+      const isSnow = biome.particle === 'snow';
+      const isAsh = biome.particle === 'ash';
+      const emitter = this.add.particles(0, 0, 'fx_glow', {
+        x: { min: 0, max: W },
+        y: { min: 0, max: H },
+        scale: { start: 0.18, end: 0.05 },
+        alpha: { start: biome.particleAlpha, end: 0 },
+        speed: isSnow ? { min: 8, max: 22 } : isAsh ? { min: 6, max: 16 } : { min: 2, max: 8 },
+        angle: isSnow ? { min: 80, max: 100 } : isAsh ? { min: 70, max: 110 } : { min: 0, max: 360 },
+        lifespan: { min: 6000, max: 10000 },
+        quantity: 1,
+        frequency: 280,
+        tint: biome.particleTint,
+        blendMode: Phaser.BlendModes.ADD,
+      });
+      emitter.setDepth(150);
+      this.events.once('shutdown', () => emitter.destroy());
+    }
+    // Fountain/sun radial glow at fountain in town
+    if (mapId.includes('town') || mapId.includes('haven')) {
+      const cx = Math.floor(this.mapWidth / 2) * TILE_SIZE + TILE_SIZE / 2;
+      const cy = Math.floor(this.mapHeight / 2) * TILE_SIZE + TILE_SIZE / 2;
+      const halo = this.add.image(cx, cy, 'fx_glow').setScale(8).setAlpha(0.25)
+        .setBlendMode(Phaser.BlendModes.ADD).setTint(0xFCD34D).setDepth(2);
+      this.tweens.add({ targets: halo, scale: 9.5, alpha: 0.35, yoyo: true, repeat: -1, duration: 2400, ease: 'Sine.inOut' });
+      this.events.once('shutdown', () => halo.destroy());
+      // Subtle water sparkle particles around fountain
+      const sparkle = this.add.particles(cx, cy, 'fx_sparkle', {
+        x: { min: -64, max: 64 },
+        y: { min: -56, max: 24 },
+        scale: { start: 0.6, end: 0 },
+        alpha: { start: 0.9, end: 0 },
+        speed: { min: 10, max: 30 },
+        angle: { min: 240, max: 300 },
+        lifespan: 1400,
+        quantity: 1,
+        frequency: 180,
+        tint: 0xBFDBFE,
+        blendMode: Phaser.BlendModes.ADD,
+      });
+      sparkle.setDepth(8);
+      this.events.once('shutdown', () => sparkle.destroy());
+    }
+  }
+
+  /** Spawn a small dust puff at the player's feet — called from animation tick. */
+  private spawnFootstepDust(x: number, y: number) {
+    const dust = this.add.image(x, y + 8, 'fx_dust').setScale(1).setAlpha(0.7).setDepth(50);
+    this.tweens.add({
+      targets: dust,
+      scale: 0.4, alpha: 0, y: y + 4,
+      duration: 600, ease: 'Cubic.out',
+      onComplete: () => dust.destroy(),
+    });
+  }
+
+  /** Detect when the local player walks into a portal AABB → fire change_map once. */
+  private tickPortalCheck(now: number) {
+    const room = NetClient.inst.worldRoom;
+    if (!room) return;
+    const me = (room.state as any)?.players?.get(this.myCharId);
+    if (!me) return;
+    const mapId = (room.state as any)?.mapId;
+    const map = ALL_MAPS[mapId];
+    if (!map?.portals) { this.lastPortalId = ''; return; }
+    let hit: any = null;
+    for (const p of map.portals) {
+      if (me.x >= p.x && me.x < p.x + p.w && me.y >= p.y && me.y < p.y + p.h) {
+        hit = p; break;
+      }
+    }
+    if (!hit) { this.lastPortalId = ''; return; }
+    // Already sent for this portal recently? skip until player leaves and re-enters
+    if (this.lastPortalId === hit.id && now - this.lastPortalSentAt < 4000) return;
+    this.lastPortalId = hit.id;
+    this.lastPortalSentAt = now;
+    this.events.emit('hud:toast', { text: `${hit.label_ko}(으)로 이동…`, kind: 'info' });
+    this.cameras.main.flash(300, 125, 211, 252);
+    NetClient.inst.send('change_map', { portalId: hit.id });
+  }
+
   private tickPlayerAnimations() {
     const now = this.time.now;
     for (const sprite of this.players.values()) {
@@ -458,19 +623,25 @@ export class WorldScene extends Phaser.Scene {
       const { row, flipX } = dirToWalkRow(sprite.dir);
       sprite.body.setFlipX(flipX);
 
-      // Procedural walk motion — bounce + sway. Works even if atlas frames are
-      // near-identical (gpt-image-2 often doesn't follow "4 walk-cycle frames"
-      // correctly, so we add visible motion in code).
       if (isMoving) {
-        const phase = now / 90; // step rhythm
-        const bounce = Math.abs(Math.sin(phase)) * -4; // body lifts up to 4px
-        const sway = Math.sin(phase) * 0.05; // ±0.05 rad (~3°) torso sway
+        const phase = now / 90;
+        const bounce = Math.abs(Math.sin(phase)) * -4;
+        const sway = Math.sin(phase) * 0.05;
         sprite.body.setY(bounce);
         sprite.body.setRotation(flipX ? -sway : sway);
+        // Footstep dust — every ~280ms while moving
+        if (now - sprite.lastDustAt > 280) {
+          this.spawnFootstepDust(sprite.container.x, sprite.container.y);
+          sprite.lastDustAt = now;
+        }
+        // Shadow squash with bounce — intensifies the lift feel
+        sprite.shadow.setScale(0.7 - bounce * 0.02);
+        sprite.shadow.setAlpha(0.7 + bounce * 0.04);
       } else {
-        // Smooth return to neutral
         sprite.body.setY(sprite.body.y * 0.7);
         sprite.body.setRotation(sprite.body.rotation * 0.7);
+        sprite.shadow.setScale(0.7);
+        sprite.shadow.setAlpha(0.7);
       }
 
       if (isMoving) {
@@ -504,8 +675,9 @@ export class WorldScene extends Phaser.Scene {
 
   private makePlayerSprite(player: any, isMe: boolean): PlayerSprite {
     const c = this.add.container(player.x * TILE_SIZE + TILE_SIZE/2, player.y * TILE_SIZE + TILE_SIZE/2);
+    // Soft drop shadow under the body — sells the 3D feel
+    const shadow = this.add.image(0, 6, 'fx_shadow').setScale(0.7).setAlpha(0.7);
     const body = this.add.image(0, 0, `char_${player.classId}`);
-    // Auto-scale: codex art is 256+px while procedural placeholder is 32×32. Normalize to ~32×32 footprint.
     const tex = this.textures.get(`char_${player.classId}`).getSourceImage() as any;
     const w = tex?.width ?? 32;
     body.setScale(w > 64 ? 56 / w : 1.0);
@@ -517,28 +689,47 @@ export class WorldScene extends Phaser.Scene {
       stroke: '#000000',
       strokeThickness: 3,
     }).setOrigin(0.5);
-    c.add([body, label]);
-    if (isMe) c.setDepth(100);
+    c.add([shadow, body, label]);
+    if (isMe) {
+      c.setDepth(100);
+      // Subtle gold rim glow on local hero — cinematic touch
+      const aura = this.add.image(0, 0, 'fx_glow').setScale(2.4).setAlpha(0.18).setBlendMode(Phaser.BlendModes.ADD).setTint(0xFCD34D);
+      c.addAt(aura, 0);
+      this.tweens.add({ targets: aura, scale: 2.7, alpha: 0.28, yoyo: true, repeat: -1, duration: 1400, ease: 'Sine.inOut' });
+    }
     return {
-      container: c, body, label, isMe,
+      container: c, body, shadow, label, isMe,
       lastX: player.x, lastY: player.y,
       classId: player.classId,
       dir: 0, walkFrame: 0,
-      lastWalkAt: 0, lastFrameAt: 0,
+      lastWalkAt: 0, lastFrameAt: 0, lastDustAt: 0,
     };
   }
 
   private makeMonsterSprite(m: any, key: string): MonsterSprite {
     const c = this.add.container(m.x * TILE_SIZE + TILE_SIZE/2, m.y * TILE_SIZE + TILE_SIZE/2);
     const tier = m.isBoss ? 'boss' : m.isNamed ? 'named' : `t${m.tier ?? 1}`;
+    const sizeMul = m.isBoss ? 1.8 : m.isNamed ? 1.3 : 1.0;
+    // Drop shadow scaled with monster size
+    const shadow = this.add.image(0, 6, 'fx_shadow').setScale(0.6 * sizeMul).setAlpha(0.6);
     const body = this.add.image(0, 0, `mon_${tier}`);
     const tex = this.textures.get(`mon_${tier}`).getSourceImage() as any;
     const w = tex?.width ?? 28;
     const baseScale = w > 64 ? 48 / w : 1.0;
-    body.setScale(baseScale * (m.isBoss ? 1.8 : m.isNamed ? 1.3 : 1.0));
+    body.setScale(baseScale * sizeMul);
     body.setOrigin(0.5, 0.75);
-    c.add(body);
-    return { container: c, body };
+    c.add([shadow, body]);
+    if (m.isBoss) {
+      // Crimson menacing aura
+      const aura = this.add.image(0, 0, 'fx_glow').setScale(3.2).setAlpha(0.22).setBlendMode(Phaser.BlendModes.ADD).setTint(0xE11D48);
+      c.addAt(aura, 0);
+      this.tweens.add({ targets: aura, scale: 3.6, alpha: 0.32, yoyo: true, repeat: -1, duration: 900, ease: 'Sine.inOut' });
+    } else if (m.isNamed) {
+      const aura = this.add.image(0, 0, 'fx_glow').setScale(2.4).setAlpha(0.16).setBlendMode(Phaser.BlendModes.ADD).setTint(0xFCD34D);
+      c.addAt(aura, 0);
+      this.tweens.add({ targets: aura, scale: 2.7, alpha: 0.24, yoyo: true, repeat: -1, duration: 1300, ease: 'Sine.inOut' });
+    }
+    return { container: c, body, shadow };
   }
 
   private playAttackAnimation(sprite: PlayerSprite) {
