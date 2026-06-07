@@ -133,18 +133,30 @@ export class WorldScene extends Phaser.Scene {
     this.tileLayer = this.add.container(0, 0);
     this.tapMarker = this.add.image(-1000, -1000, 'tap_target').setVisible(false);
 
-    this.setupInput();
-    this.bindNetwork();
     // Authoritative map id (synced when joinWorld succeeds; state.mapId is unreliable
     // immediately after scene.restart since Colyseus state needs a tick to populate).
     const initialMap = NetClient.inst.currentMap
       || (NetClient.inst.worldRoom?.state as any)?.mapId
       || 'aurora_town';
+    // Set map dimensions from the client map def NOW — BEFORE bindNetwork's onAdd sets the
+    // camera bounds. Otherwise bounds default to 60×60 and on a larger map (forgotten_meadow
+    // is 100×80) the player spawns beyond the clamp (e.g. x=96) so the camera can never scroll
+    // far enough to follow → the character sits off-screen and looks "invisible".
+    const initialDef = ALL_MAPS[initialMap];
+    if (initialDef) { this.mapWidth = initialDef.width; this.mapHeight = initialDef.height; }
+
+    this.setupInput();
+    this.bindNetwork();
     this.renderTiles(initialMap);
     this.renderScenery(initialMap);
     this.renderNPCs(initialMap);
     this.renderPortals(initialMap);
     this.applyAtmosphere(initialMap);
+
+    // Re-assert camera bounds + follow with the FINAL map dimensions, in case onAdd ran
+    // before dims were known or the local player sprite was created after the first bind.
+    this.cameras.main.setBounds(0, 0, this.mapWidth * TILE_SIZE, this.mapHeight * TILE_SIZE);
+    if (this.myPlayer) this.cameras.main.startFollow(this.myPlayer.container, true, 0.12, 0.12);
 
     // Re-bind on reconnect (server preserves state via allowReconnection)
     NetClient.inst.onReconnected = () => {
@@ -997,7 +1009,9 @@ export class WorldScene extends Phaser.Scene {
       strokeThickness: 3,
     }).setOrigin(0.5);
     c.add([shadow, body, label]);
-    if (isMe) c.setDepth(100);
+    // Always keep players above the tile/scenery layer (collision rocks/trees live there).
+    // "Me" sits on top of other players.
+    c.setDepth(isMe ? 100 : 60);
     return {
       container: c, body, shadow, label, isMe,
       lastX: player.x, lastY: player.y,
@@ -1390,12 +1404,12 @@ export class WorldScene extends Phaser.Scene {
   }
 
   private renderTiles(mapId: string) {
-    // Pull map dimensions from room state once it's ready
+    // Map dimensions: prefer the client map def (always available + correct) over room
+    // state, which lags a tick after scene.restart and would momentarily reset to 60×60.
     const state = NetClient.inst.worldRoom?.state as any;
-    if (state) {
-      this.mapWidth = state.mapWidth || 60;
-      this.mapHeight = state.mapHeight || 60;
-    }
+    const def = ALL_MAPS[mapId];
+    this.mapWidth = def?.width || state?.mapWidth || 60;
+    this.mapHeight = def?.height || state?.mapHeight || 60;
     // Procedural tiling: town = grass + stone roads. Field = mostly dirt.
     const tileKey = mapId.includes('town') ? 'tile_grass'
       : mapId.includes('cave') || mapId.includes('mine') ? 'tile_stone'

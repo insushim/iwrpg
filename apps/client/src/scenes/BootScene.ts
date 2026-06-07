@@ -17,6 +17,17 @@ export class BootScene extends Phaser.Scene {
 
     this.load.on('progress', (p: number) => { bar.width = 318 * p; });
 
+    // One-time cache-bust. Earlier deploys served /assets with `immutable`, so browsers
+    // pinned the OLD PNGs for a year and ignore hard-refresh. Appending a version query
+    // changes the URL → forces a fresh fetch. Bump ASSET_V whenever stale art must be
+    // flushed. (vercel.json now uses must-revalidate for media, so this is belt-and-braces.)
+    const ASSET_V = '2';
+    const _img = this.load.image.bind(this.load);
+    (this.load as any).image = (key: string, url?: string | string[]) => {
+      if (typeof url === 'string' && !url.includes('?')) url = `${url}?v=${ASSET_V}`;
+      return _img(key, url as any);
+    };
+
     // === Real codex-generated assets (load first; placeholder fallback if 404) ===
     // Characters: idle frame as the main sprite
     this.load.image('char_aether-lord', 'assets/img/characters/aether_lord/idle_0.png');
