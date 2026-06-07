@@ -11,10 +11,11 @@ export class WordQueue {
   private rng: () => number;
 
   constructor(seed?: number) {
+    // rng MUST be set before shuffle() — shuffle calls this.rng().
+    this.rng = mulberry32(seed ?? Date.now() & 0x7fffffff);
     // Filter only words for the current grade band; default = all
     this.active = [...ALL_WORDS];
     this.shuffle(this.active);
-    this.rng = mulberry32(seed ?? Date.now() & 0x7fffffff);
   }
 
   /** Restrict pool to a specific tier set (grade-aware). */

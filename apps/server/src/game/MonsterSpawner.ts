@@ -29,7 +29,10 @@ export class MonsterSpawner {
     const mapDef = getMapDef(this.mapId);
     if (!mapDef || mapDef.is_safe_zone) return;
     for (const sp of mapDef.spawn_points) {
-      this.spawnAt(sp);
+      // Spawn the full pack per point — previously only 1 spawned, ignoring
+      // max_concurrent, which left hunting maps nearly empty.
+      const count = Math.max(1, sp.max_concurrent ?? 1);
+      for (let i = 0; i < count; i++) this.spawnAt(sp);
     }
   }
 

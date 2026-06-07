@@ -106,6 +106,7 @@ export class WorldScene extends Phaser.Scene {
   private mapWidth = 60;
   private mapHeight = 60;
   private tileLayer!: Phaser.GameObjects.Container;
+  private heldKeys = new Set<string>();
   private tapMarker!: Phaser.GameObjects.Image;
   private lastQuizPrompt: any = null;
   private walkTarget: { tx: number; ty: number } | null = null;
@@ -158,6 +159,169 @@ export class WorldScene extends Phaser.Scene {
     this.installResetButton();
     // Diagnostic overlay (toggle with backtick `)
     this.installDebugOverlay();
+    // Live sprite position/size tuner (🛠 button, bottom-right)
+    this.installSpriteTuner();
+    // If we arrived here via a map change, the veil is showing — fade it out once the
+    // fresh map has been built and the first state has had a moment to sync.
+    this.time.delayedCall(450, () => this.hideMapLoading());
+  }
+
+  /** Full-screen "이동 중" veil shown during a map transition (scene rebuild). */
+  private showMapLoading(mapNameKo?: string) {
+    let el = document.getElementById('rwc-maploading');
+    if (!el) {
+      el = document.createElement('div');
+      el.id = 'rwc-maploading';
+      el.style.cssText = [
+        'position:fixed', 'inset:0', 'z-index:100000', 'display:flex',
+        'align-items:center', 'justify-content:center', 'flex-direction:column',
+        'gap:14px', 'background:#0b0d12', 'color:#FCD34D', 'transition:opacity .3s',
+        'font:600 20px/1.4 Cinzel,serif',
+      ].join(';');
+      document.body.appendChild(el);
+    }
+    el.innerHTML = `<div style="font-size:34px">🗺️</div><div>${mapNameKo ? mapNameKo + ' (으)로 이동 중…' : '이동 중…'}</div>`
+      + '<div style="width:140px;height:4px;background:#2a2f3a;border-radius:2px;overflow:hidden">'
+      + '<div style="width:40%;height:100%;background:#C9A227;animation:rwcload 1s ease-in-out infinite"></div></div>';
+    if (!document.getElementById('rwc-load-kf')) {
+      const st = document.createElement('style');
+      st.id = 'rwc-load-kf';
+      st.textContent = '@keyframes rwcload{0%{margin-left:-40%}100%{margin-left:140%}}';
+      document.head.appendChild(st);
+    }
+    el.style.opacity = '1';
+    el.style.display = 'flex';
+  }
+
+  private hideMapLoading() {
+    const el = document.getElementById('rwc-maploading');
+    if (!el) return;
+    el.style.opacity = '0';
+    setTimeout(() => { el.style.display = 'none'; }, 320);
+  }
+
+  /** Re-apply the current tunable params to every player sprite (live preview). */
+  private applySpriteParams() {
+    for (const sprite of this.players.values()) {
+      this.setBodyTexture(sprite.body, sprite.body.texture.key); // re-trim scale + origin
+      sprite.shadow.setPosition(this.shadowX, this.shadowY).setScale(this.shadowScale).setAlpha(this.shadowAlpha);
+      sprite.label.setPosition(this.nameX, this.nameY);
+    }
+  }
+
+  /** In-game editor to fine-tune character size, origin, and shadow offset/size.
+   *  Drag sliders → live preview on your character → copy the numbers into code. */
+  private installSpriteTuner() {
+    if (document.getElementById('rwc-tuner')) return;
+    const wrap = document.createElement('div');
+    wrap.id = 'rwc-tuner';
+    wrap.style.cssText = [
+      'position:fixed', 'right:12px', 'bottom:96px', 'z-index:99999',
+      'width:260px', 'background:rgba(10,10,15,0.94)', 'color:#FCD34D',
+      'border:1px solid #C9A227', 'border-radius:10px', 'padding:10px 12px',
+      'font:12px/1.5 ui-monospace,Menlo,monospace', 'display:none',
+      'box-shadow:0 8px 24px rgba(0,0,0,0.5)', 'max-height:82vh', 'overflow:auto',
+    ].join(';');
+
+    type TKey = 'charDisplayH'|'charOffsetX'|'charOffsetY'|'nameX'|'nameY'|'shadowX'|'shadowY'|'shadowScale'|'shadowAlpha';
+    const rows: Array<{ key: TKey; label: string; min: number; max: number; step: number; }> = [
+      { key: 'charDisplayH', label: '캐릭터 크기(px)', min: 40, max: 200, step: 1 },
+      { key: 'charOffsetX',  label: '캐릭터 X 위치',   min: -40, max: 40, step: 1 },
+      { key: 'charOffsetY',  label: '캐릭터 Y 위치',   min: -40, max: 60, step: 1 },
+      { key: 'nameX',        label: '이름 X 위치',     min: -60, max: 60, step: 1 },
+      { key: 'nameY',        label: '이름 Y 위치',     min: -160, max: 10, step: 1 },
+      { key: 'shadowX',      label: '그림자 X 오프셋', min: -40, max: 40, step: 1 },
+      { key: 'shadowY',      label: '그림자 Y 오프셋', min: -30, max: 40, step: 1 },
+      { key: 'shadowScale',  label: '그림자 크기',      min: 0.20, max: 2.60, step: 0.01 },
+      { key: 'shadowAlpha',  label: '그림자 투명도',    min: 0.0, max: 1.0, step: 0.01 },
+    ];
+
+    let html = '<div style="font-weight:bold;margin-bottom:6px">🛠 스프라이트 편집기</div>';
+    for (const r of rows) {
+      html += `<label style="display:block;margin:6px 0 2px">${r.label}: <span id="rwc-v-${r.key}">${this[r.key]}</span></label>`;
+      html += `<input id="rwc-s-${r.key}" type="range" min="${r.min}" max="${r.max}" step="${r.step}" value="${this[r.key]}" style="width:100%">`;
+    }
+    html += '<div style="margin-top:8px;display:flex;gap:6px">'
+      + '<button id="rwc-copy" style="flex:1;background:#2A1810;color:#FCD34D;border:1px solid #C9A227;border-radius:6px;padding:4px;cursor:pointer">📋 값 복사</button>'
+      + '<button id="rwc-reset" style="background:#2A1810;color:#FCD34D;border:1px solid #C9A227;border-radius:6px;padding:4px 8px;cursor:pointer">↺</button>'
+      + '</div>';
+    html += '<div id="rwc-code" style="margin-top:6px;white-space:pre-wrap;color:#9CA3AF;font-size:11px"></div>';
+    wrap.innerHTML = html;
+    document.body.appendChild(wrap);
+
+    // Floating toggle button
+    const btn = document.createElement('button');
+    btn.textContent = '🛠';
+    btn.title = '스프라이트 편집기';
+    btn.style.cssText = [
+      'position:fixed', 'right:12px', 'bottom:56px', 'z-index:99999',
+      'width:36px', 'height:36px', 'border-radius:50%', 'cursor:pointer',
+      'background:rgba(10,10,15,0.92)', 'color:#FCD34D', 'border:1px solid #C9A227',
+      'font-size:18px',
+    ].join(';');
+    btn.onclick = () => { wrap.style.display = wrap.style.display === 'none' ? 'block' : 'none'; };
+    document.body.appendChild(btn);
+
+    // Live direction readout (updated each frame in tickPlayerAnimations)
+    const dirBox = document.createElement('div');
+    dirBox.id = 'rwc-dir';
+    dirBox.style.cssText = 'margin-top:8px;padding:6px;background:#05070b;border:1px solid #2a2f3a;border-radius:6px;color:#7DD3FC;font-size:12px';
+    dirBox.textContent = '방향: (걸어보세요)';
+    wrap.appendChild(dirBox);
+
+    const defaults: Record<TKey, number> = {
+      charDisplayH: this.charDisplayH,
+      charOffsetX: this.charOffsetX, charOffsetY: this.charOffsetY,
+      nameX: this.nameX, nameY: this.nameY,
+      shadowX: this.shadowX, shadowY: this.shadowY,
+      shadowScale: this.shadowScale, shadowAlpha: this.shadowAlpha,
+    };
+    const codeBox = wrap.querySelector('#rwc-code') as HTMLElement;
+    const refresh = () => {
+      for (const r of rows) {
+        const v = wrap.querySelector(`#rwc-v-${r.key}`) as HTMLElement;
+        if (v) v.textContent = String(this[r.key]);
+      }
+      codeBox.textContent =
+        `charDisplayH=${this.charDisplayH}\n` +
+        `charOffsetX=${this.charOffsetX}\ncharOffsetY=${this.charOffsetY}\n` +
+        `nameX=${this.nameX}\nnameY=${this.nameY}\n` +
+        `shadowX=${this.shadowX}\nshadowY=${this.shadowY}\n` +
+        `shadowScale=${this.shadowScale}\nshadowAlpha=${this.shadowAlpha}`;
+    };
+    for (const r of rows) {
+      const s = wrap.querySelector(`#rwc-s-${r.key}`) as HTMLInputElement;
+      s.oninput = () => {
+        (this[r.key] as number) = parseFloat(s.value);
+        this.applySpriteParams();
+        refresh();
+      };
+    }
+    const copyBtn = wrap.querySelector('#rwc-copy') as HTMLButtonElement;
+    copyBtn.onclick = () => {
+      const txt = codeBox.textContent || '';
+      // Robust copy: clipboard API can silently fail off https → textarea fallback.
+      try { navigator.clipboard?.writeText(txt); } catch { /* ignore */ }
+      try {
+        const ta = document.createElement('textarea');
+        ta.value = txt; ta.style.position = 'fixed'; ta.style.opacity = '0';
+        document.body.appendChild(ta); ta.focus(); ta.select();
+        document.execCommand('copy'); ta.remove();
+      } catch { /* ignore */ }
+      const old = copyBtn.textContent;
+      copyBtn.textContent = '✓ 복사됨!';
+      setTimeout(() => { copyBtn.textContent = old; }, 1200);
+    };
+    (wrap.querySelector('#rwc-reset') as HTMLButtonElement).onclick = () => {
+      Object.assign(this, defaults);
+      for (const r of rows) {
+        (wrap.querySelector(`#rwc-s-${r.key}`) as HTMLInputElement).value = String(this[r.key]);
+      }
+      this.applySpriteParams();
+      refresh();
+    };
+    refresh();
+    this.events.once('shutdown', () => { wrap.remove(); btn.remove(); });
   }
 
   private installDebugOverlay() {
@@ -367,6 +531,10 @@ export class WorldScene extends Phaser.Scene {
     room.onMessage('quiz_prompt', (msg: any) => {
       this.lastQuizPrompt = msg.prompt;
       Wordbook.trackPrompt(msg.prompt);
+      // Stop any pending auto-walk + held keys so the character doesn't keep walking
+      // (and end up far away / "teleported") while the quiz modal is open.
+      this.walkTarget = null;
+      this.input.keyboard?.resetKeys();
       this.events.emit('quiz:prompt', msg.prompt);
     });
     room.onMessage('quiz_result', (msg: any) => {
@@ -408,6 +576,8 @@ export class WorldScene extends Phaser.Scene {
       }
     });
     room.onMessage('change_map_request', (msg: any) => {
+      // Show a loading veil so the scene rebuild doesn't flash like an error.
+      this.showMapLoading(msg.targetMapNameKo);
       // Reconnect to new map room, spawning at the portal exit coordinates
       NetClient.inst.joinWorld(msg.targetMap, { x: msg.x, y: msg.y }).then(() => {
         this.scene.restart();
@@ -463,17 +633,31 @@ export class WorldScene extends Phaser.Scene {
       this.walkTarget = { tx, ty };
     });
 
-    // Keyboard movement (WASD or arrow keys)
-    const keys = this.input.keyboard!.addKeys({
-      W: Phaser.Input.Keyboard.KeyCodes.W,
-      A: Phaser.Input.Keyboard.KeyCodes.A,
-      S: Phaser.Input.Keyboard.KeyCodes.S,
-      D: Phaser.Input.Keyboard.KeyCodes.D,
-      UP: Phaser.Input.Keyboard.KeyCodes.UP,
-      DOWN: Phaser.Input.Keyboard.KeyCodes.DOWN,
-      LEFT: Phaser.Input.Keyboard.KeyCodes.LEFT,
-      RIGHT: Phaser.Input.Keyboard.KeyCodes.RIGHT,
-    }) as any;
+    // Movement keys tracked via NATIVE keydown/keyup (Phaser's isDown can get "stuck"
+    // when a keyup is dropped during focus changes → character walks on its own). We
+    // ignore keys while typing in the chat box, and clear everything on focus loss.
+    const typingInField = () => {
+      const el = document.activeElement as HTMLElement | null;
+      return !!el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable);
+    };
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (typingInField()) return;
+      this.heldKeys.add(e.code);
+      // Stop arrow keys / space from scrolling the page.
+      if (['ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Space'].includes(e.code)) e.preventDefault();
+      if (e.code === 'Space') this.attackNearest();
+    };
+    const onKeyUp = (e: KeyboardEvent) => this.heldKeys.delete(e.code);
+    const resetKeys = () => { this.heldKeys.clear(); this.input.keyboard?.resetKeys(); this.walkTarget = null; };
+    window.addEventListener('keydown', onKeyDown);
+    window.addEventListener('keyup', onKeyUp);
+    window.addEventListener('blur', resetKeys);
+    document.addEventListener('visibilitychange', () => { if (document.hidden) resetKeys(); });
+    this.events.once('shutdown', () => {
+      window.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener('keyup', onKeyUp);
+      window.removeEventListener('blur', resetKeys);
+    });
 
     this.events.on('update', () => {
       const now = this.time.now;
@@ -503,8 +687,9 @@ export class WorldScene extends Phaser.Scene {
 
       let dx = 0, dy = 0;
       // Keyboard takes precedence and cancels click-to-walk
-      const kbX = (keys.A.isDown || keys.LEFT.isDown) ? -1 : (keys.D.isDown || keys.RIGHT.isDown) ? 1 : 0;
-      const kbY = (keys.W.isDown || keys.UP.isDown) ? -1 : (keys.S.isDown || keys.DOWN.isDown) ? 1 : 0;
+      const h = this.heldKeys;
+      const kbX = (h.has('KeyA') || h.has('ArrowLeft')) ? -1 : (h.has('KeyD') || h.has('ArrowRight')) ? 1 : 0;
+      const kbY = (h.has('KeyW') || h.has('ArrowUp')) ? -1 : (h.has('KeyS') || h.has('ArrowDown')) ? 1 : 0;
       if (kbX !== 0 || kbY !== 0) {
         this.walkTarget = null;
         dx = kbX; dy = kbY;
@@ -557,33 +742,35 @@ export class WorldScene extends Phaser.Scene {
     };
     // Toned-down values — bloom + vignette were too aggressive (color smearing).
     // Goal: subtle cinematic depth, NOT washed-out fog. Bloom now <0.4 max.
+    // Daylight pass. NOTE: `vignette` here is the RADIUS of the lit area passed to
+    // addVignette(x,y,RADIUS,strength) — bigger = more of the screen is bright.
     const town: Biome = {
-      bg: 0x1B1F2A, tint: [1.0, 1.0, 1.0, 1.0], vignette: 0.4,
-      bloom: 0.18, particle: 'mote', particleTint: 0xFCD34D, particleAlpha: 0.25,
+      bg: 0x6E8A66, tint: [1.0, 1.0, 1.0, 1.0], vignette: 0.95,
+      bloom: 0.12, particle: 'mote', particleTint: 0xFCD34D, particleAlpha: 0.18,
     };
     const cave: Biome = {
-      bg: 0x06080C, tint: [1.0, 1.0, 1.0, 1.0], vignette: 0.6,
-      bloom: 0.12, particle: 'mote', particleTint: 0x9CA3AF, particleAlpha: 0.18,
+      bg: 0x1A1E26, tint: [1.0, 1.0, 1.0, 1.0], vignette: 0.7,
+      bloom: 0.1, particle: 'mote', particleTint: 0x9CA3AF, particleAlpha: 0.15,
     };
     const ruin: Biome = {
-      bg: 0x14181F, tint: [1.0, 1.0, 1.0, 1.0], vignette: 0.5,
-      bloom: 0.15, particle: 'ash', particleTint: 0xCBD5E1, particleAlpha: 0.2,
+      bg: 0x3A3F48, tint: [1.0, 1.0, 1.0, 1.0], vignette: 0.9,
+      bloom: 0.12, particle: 'ash', particleTint: 0xCBD5E1, particleAlpha: 0.16,
     };
     const fire: Biome = {
-      bg: 0x2A0E08, tint: [1.0, 1.0, 1.0, 1.0], vignette: 0.5,
-      bloom: 0.28, particle: 'ash', particleTint: 0xF59E0B, particleAlpha: 0.3,
+      bg: 0x4A2418, tint: [1.0, 1.0, 1.0, 1.0], vignette: 0.85,
+      bloom: 0.22, particle: 'ash', particleTint: 0xF59E0B, particleAlpha: 0.25,
     };
     const ice: Biome = {
-      bg: 0x0F1A28, tint: [1.0, 1.0, 1.0, 1.0], vignette: 0.4,
-      bloom: 0.18, particle: 'snow', particleTint: 0xE0F2FE, particleAlpha: 0.35,
+      bg: 0x33506E, tint: [1.0, 1.0, 1.0, 1.0], vignette: 0.95,
+      bloom: 0.15, particle: 'snow', particleTint: 0xE0F2FE, particleAlpha: 0.3,
     };
     const field: Biome = {
-      bg: 0x121A14, tint: [1.0, 1.0, 1.0, 1.0], vignette: 0.4,
-      bloom: 0.15, particle: 'mote', particleTint: 0xCFE9A8, particleAlpha: 0.2,
+      bg: 0x4E6E44, tint: [1.0, 1.0, 1.0, 1.0], vignette: 0.95,
+      bloom: 0.12, particle: 'mote', particleTint: 0xCFE9A8, particleAlpha: 0.16,
     };
     const aether: Biome = {
-      bg: 0x14082A, tint: [1.0, 1.0, 1.0, 1.0], vignette: 0.55,
-      bloom: 0.32, particle: 'mote', particleTint: 0xC084FC, particleAlpha: 0.35,
+      bg: 0x3A2860, tint: [1.0, 1.0, 1.0, 1.0], vignette: 0.85,
+      bloom: 0.26, particle: 'mote', particleTint: 0xC084FC, particleAlpha: 0.3,
     };
     const biome: Biome =
       mapId.includes('cave') || mapId.includes('mine') || mapId.includes('caverns') ? cave
@@ -598,7 +785,7 @@ export class WorldScene extends Phaser.Scene {
     try {
       const fx = (cam as any).postFX;
       fx?.clear();
-      fx?.addVignette(0.5, 0.5, biome.vignette, 0.55);
+      fx?.addVignette(0.5, 0.5, biome.vignette, 0.2);
       // Bloom kept very low — at <0.35 it adds depth without color bleed.
       if (biome.bloom > 0.05) fx?.addBloom(0xFFFFFF, 1.0, 1.0, 1.0, biome.bloom, 2);
     } catch { /* postFX unsupported */ }
@@ -693,27 +880,31 @@ export class WorldScene extends Phaser.Scene {
       const cls = sprite.classId;
       const isMoving = (now - sprite.lastWalkAt) < 350;
       const { row, flipX } = dirToWalkRow(sprite.dir);
+      // 3-direction ANIMATED walk cycle (front/side/back × 4 frames). The walk8 set
+      // has accurate facing but only 1 static (combat-pose) frame per dir, so it looked
+      // frozen / attack-like — animation matters more here.
       sprite.body.setFlipX(flipX);
+      const offX = flipX ? -this.charOffsetX : this.charOffsetX;
+      sprite.body.setX(offX);
 
       if (isMoving) {
         const phase = now / 90;
         const bounce = Math.abs(Math.sin(phase)) * -4;
         const sway = Math.sin(phase) * 0.05;
-        sprite.body.setY(bounce);
-        sprite.body.setRotation(flipX ? -sway : sway);
-        // Footstep dust — every ~280ms while moving
+        sprite.body.setY(this.charOffsetY + bounce);
+        // Sway only on the side view; up/down stay upright.
+        sprite.body.setRotation(row === 'side' ? (flipX ? -sway : sway) : 0);
         if (now - sprite.lastDustAt > 280) {
           this.spawnFootstepDust(sprite.container.x, sprite.container.y);
           sprite.lastDustAt = now;
         }
-        // Shadow squash with bounce — intensifies the lift feel
-        sprite.shadow.setScale(0.7 - bounce * 0.02);
-        sprite.shadow.setAlpha(0.7 + bounce * 0.04);
+        sprite.shadow.setScale(this.shadowScale - bounce * 0.03);
+        sprite.shadow.setAlpha(this.shadowAlpha + bounce * 0.04);
       } else {
-        sprite.body.setY(sprite.body.y * 0.7);
+        sprite.body.setY(this.charOffsetY + (sprite.body.y - this.charOffsetY) * 0.7);
         sprite.body.setRotation(sprite.body.rotation * 0.7);
-        sprite.shadow.setScale(0.7);
-        sprite.shadow.setAlpha(0.7);
+        sprite.shadow.setScale(this.shadowScale);
+        sprite.shadow.setAlpha(this.shadowAlpha);
       }
 
       if (isMoving) {
@@ -722,39 +913,83 @@ export class WorldScene extends Phaser.Scene {
           sprite.lastFrameAt = now;
         }
         const wKey = `char_${cls}_walk_${row}_${sprite.walkFrame}`;
-        if (this.textures.exists(wKey)) {
-          sprite.body.setTexture(wKey);
-          continue;
-        }
-        const fallbackKey = `char_${cls}_walk_${sprite.dir}`;
-        if (this.textures.exists(fallbackKey)) {
-          sprite.body.setTexture(fallbackKey);
-          continue;
-        }
+        if (this.textures.exists(wKey)) { this.setBodyTexture(sprite.body, wKey); continue; }
         const idleKey = `char_${cls}`;
-        if (this.textures.exists(idleKey)) sprite.body.setTexture(idleKey);
+        if (this.textures.exists(idleKey)) this.setBodyTexture(sprite.body, idleKey);
       } else {
         const idleKey = `char_${cls}_walk_${row}_0`;
-        if (this.textures.exists(idleKey)) {
-          sprite.body.setTexture(idleKey);
-          continue;
-        }
+        if (this.textures.exists(idleKey)) { this.setBodyTexture(sprite.body, idleKey); continue; }
         const fallbackIdle = `char_${cls}`;
-        if (this.textures.exists(fallbackIdle)) sprite.body.setTexture(fallbackIdle);
+        if (this.textures.exists(fallbackIdle)) this.setBodyTexture(sprite.body, fallbackIdle);
       }
     }
   }
 
+  // ── Live-tunable sprite params (tuned via the in-game 🛠 panel) ──
+  private charDisplayH = 78;    // on-screen CONTENT height (px) after alpha-trim
+  private charOffsetX = 0;      // body x nudge (mirrors when facing left)
+  private charOffsetY = 0;      // body y nudge from the feet line
+  private nameX = 3;            // name label x offset
+  private nameY = -91;          // name label y offset (above the head)
+  private shadowX = 0;          // shadow horizontal offset
+  private shadowY = 2;          // shadow vertical offset from the feet
+  private shadowScale = 1.2;    // shadow size
+  private shadowAlpha = 0.75;   // shadow opacity
+  // Per-texture alpha-trim cache: actual content height + feet/center ratios.
+  private trimCache = new Map<string, { h: number; oy: number; ox: number }>();
+
+  /** Measure the visible (non-transparent) bounds of a texture once, cached.
+   *  h = content height px, oy = content-bottom ratio (feet), ox = content-center ratio. */
+  private getTrim(key: string): { h: number; oy: number; ox: number } {
+    const hit = this.trimCache.get(key);
+    if (hit) return hit;
+    const src = this.textures.get(key).getSourceImage() as HTMLImageElement;
+    const w = src.width || 64, h = src.height || 64;
+    let res = { h, oy: 0.93, ox: 0.5 };
+    try {
+      const cv = document.createElement('canvas');
+      cv.width = w; cv.height = h;
+      const ctx = cv.getContext('2d', { willReadFrequently: true })!;
+      ctx.drawImage(src, 0, 0);
+      const d = ctx.getImageData(0, 0, w, h).data;
+      let minY = h, maxY = -1;
+      for (let y = 0; y < h; y++) {
+        for (let x = 0; x < w; x++) {
+          if (d[(y * w + x) * 4 + 3] > 24) { if (y < minY) minY = y; if (y > maxY) maxY = y; break; }
+        }
+        for (let x = w - 1; x >= 0; x--) {
+          if (d[(y * w + x) * 4 + 3] > 24) { if (y > maxY) maxY = y; break; }
+        }
+      }
+      if (maxY >= 0) {
+        // Horizontal anchor is FIXED at the frame centre (0.5). Sprite-sheet characters
+        // are drawn centred, so this keeps the body planted; measuring the content's own
+        // centre made a flowing cape/bow drag the anchor sideways frame-to-frame (drift).
+        res = { h: maxY - minY + 1, oy: (maxY + 1) / h, ox: 0.5 };
+      }
+    } catch { /* CORS/decoding — keep fallback */ }
+    this.trimCache.set(key, res);
+    return res;
+  }
+
+  /** Swap a character body texture AND renormalize by TRIMMED content size, so the
+   *  visible character stays the same height and its feet stay on the shadow across
+   *  every frame (idle 256×341, side-walk 384×1024, atk 256×256, cast 256×1024). */
+  private setBodyTexture(body: Phaser.GameObjects.Image, key: string) {
+    body.setTexture(key);
+    const t = this.getTrim(key);
+    body.setOrigin(t.ox, t.oy);          // anchor at the feet (bottom-center of art)
+    body.setScale(this.charDisplayH / t.h);
+  }
+
   private makePlayerSprite(player: any, isMe: boolean): PlayerSprite {
     const c = this.add.container(player.x * TILE_SIZE + TILE_SIZE/2, player.y * TILE_SIZE + TILE_SIZE/2);
-    // Soft drop shadow under the body — sells the 3D feel
-    const shadow = this.add.image(0, 6, 'fx_shadow').setScale(0.7).setAlpha(0.7);
-    const body = this.add.image(0, 0, `char_${player.classId}`);
-    const tex = this.textures.get(`char_${player.classId}`).getSourceImage() as any;
-    const w = tex?.width ?? 32;
-    body.setScale(w > 64 ? 56 / w : 1.0);
-    body.setOrigin(0.5, 0.78);
-    const label = this.add.text(0, -32, player.name + (isMe ? ' ✦' : ''), {
+    // Soft drop shadow under the body — sells the 3D feel. Sized for the ~100px body.
+    const shadow = this.add.image(this.shadowX, this.shadowY, 'fx_shadow').setScale(this.shadowScale).setAlpha(this.shadowAlpha);
+    const body = this.add.image(this.charOffsetX, this.charOffsetY, `char_${player.classId}`);
+    // Origin (feet) + size come from the alpha-trim — keeps every frame consistent.
+    this.setBodyTexture(body, `char_${player.classId}`);
+    const label = this.add.text(this.nameX, this.nameY, player.name + (isMe ? ' ✦' : ''), {
       fontFamily: 'Noto Sans KR, sans-serif',
       fontSize: '11px',
       color: isMe ? '#FCD34D' : '#E8E1C9',
@@ -798,6 +1033,28 @@ export class WorldScene extends Phaser.Scene {
     return { container: c, body, shadow };
   }
 
+  /** Attack the closest living monster within range (used by SPACE bar). */
+  private attackNearest() {
+    const state = NetClient.inst.worldRoom?.state as any;
+    const me = state?.players?.get(this.myCharId);
+    if (!me) return;
+    let bestId: string | null = null;
+    let bestD = 999;
+    for (const [key] of this.monsters.entries()) {
+      const m = state.monsters.get(key);
+      if (!m || m.aiState === 'dead') continue;
+      const d = Math.abs(me.x - m.x) + Math.abs(me.y - m.y);
+      if (d <= 5 && d < bestD) { bestD = d; bestId = key; }
+    }
+    if (!bestId) return;
+    const m = state.monsters.get(bestId);
+    this.selectedMonsterId = bestId;
+    this.events.emit('hud:target_selected', { id: bestId, name: m?.displayNameKo, hp: m?.hp, maxHp: m?.maxHp });
+    NetClient.inst.send('attack', { targetId: bestId });
+    AudioManager.playSfx('attack');
+    if (this.myPlayer) this.playAttackAnimation(this.myPlayer);
+  }
+
   private playAttackAnimation(sprite: PlayerSprite) {
     const cls = sprite.classId;
     const frames = [`char_${cls}_atk_0`, `char_${cls}_atk_1`, `char_${cls}_atk_2`, `char_${cls}_atk_3`];
@@ -806,10 +1063,10 @@ export class WorldScene extends Phaser.Scene {
       if (i >= frames.length) {
         // Restore idle / walk frame
         const idleKey = `char_${cls}`;
-        if (this.textures.exists(idleKey)) sprite.body.setTexture(idleKey);
+        if (this.textures.exists(idleKey)) this.setBodyTexture(sprite.body, idleKey);
         return;
       }
-      if (this.textures.exists(frames[i])) sprite.body.setTexture(frames[i]);
+      if (this.textures.exists(frames[i])) this.setBodyTexture(sprite.body, frames[i]);
       i++;
       this.time.delayedCall(80, tick);
     };
@@ -876,6 +1133,22 @@ export class WorldScene extends Phaser.Scene {
       const r = map.collision?.[y]?.[x];
       return r === 0 || r === undefined;
     };
+
+    // Make every BLOCKED tile visible — collision rects were invisible walls because
+    // decoration is placed randomly and never matched the collision grid. Drop a rock/
+    // tree cluster on each interior blocked tile so what blocks you is what you see.
+    // (Towns express their collision via the buildings rendered below, so skip them.)
+    const isTown = map.is_safe_zone || mapId.includes('town') || mapId.includes('haven');
+    if (map.collision && !isTown) {
+      for (let yy = 1; yy < H - 1; yy++) {
+        for (let xx = 1; xx < W - 1; xx++) {
+          if (map.collision[yy]?.[xx] === 1) {
+            const variant = (xx * 7 + yy * 13) % 5;
+            place(variant < 3 ? 'scenery_rock' : 'scenery_tree', xx, yy, 1);
+          }
+        }
+      }
+    }
 
     if (map.is_safe_zone || mapId.includes('town') || mapId.includes('haven')) {
       // Town layout: fountain center + codex-illustrated buildings near NPCs + edge trees
@@ -972,43 +1245,53 @@ export class WorldScene extends Phaser.Scene {
         if (isWalkable(bx, by) && Math.abs(bx - cx) > 5) place('scenery_bush', bx, by, 1);
       }
     } else if (mapId.includes('cave') || mapId.includes('mine') || mapId.includes('caverns')) {
-      // Cave: rocks scattered, lanterns on edges
-      for (let i = 0; i < 80; i++) {
+      // Cave: rocks scattered, lanterns on edges — density scales with map area.
+      const area = W * H;
+      const rockCount = Math.floor(area * 0.02);
+      const lanternCount = Math.floor(area * 0.004);
+      for (let i = 0; i < rockCount; i++) {
         const x = Math.floor(rand() * W);
         const y = Math.floor(rand() * H);
         if (isWalkable(x, y)) place('scenery_rock', x, y, 1);
       }
-      for (let i = 0; i < 15; i++) {
+      for (let i = 0; i < lanternCount; i++) {
         const x = Math.floor(rand() * W);
         const y = Math.floor(rand() * H);
         if (isWalkable(x, y)) place('scenery_lantern', x, y, 2);
       }
     } else if (mapId.includes('citadel') || mapId.includes('temple') || mapId.includes('ruined')) {
-      // Ruins: occasional pillars (use temple sprite small) + rocks
-      for (let i = 0; i < 30; i++) {
+      // Ruins: occasional pillars (use temple sprite small) + rocks — area-scaled.
+      const area = W * H;
+      const pillarCount = Math.floor(area * 0.008);
+      const rockCount = Math.floor(area * 0.018);
+      for (let i = 0; i < pillarCount; i++) {
         const x = Math.floor(rand() * W);
         const y = Math.floor(rand() * H);
         if (isWalkable(x, y)) place('scenery_temple', x, y, 2);
       }
-      for (let i = 0; i < 50; i++) {
+      for (let i = 0; i < rockCount; i++) {
         const x = Math.floor(rand() * W);
         const y = Math.floor(rand() * H);
         if (isWalkable(x, y)) place('scenery_rock', x, y, 1);
       }
     } else {
-      // Field / forest: lots of trees, some rocks and bushes
-      const treeCount = mapId.includes('woods') || mapId.includes('grove') || mapId.includes('meadow') ? 120 : 60;
+      // Field / forest: density scales with map area so big maps aren't empty.
+      const area = W * H;
+      const isLush = mapId.includes('woods') || mapId.includes('grove') || mapId.includes('meadow');
+      const treeCount = Math.floor(area * (isLush ? 0.045 : 0.028));
+      const rockCount = Math.floor(area * 0.012);
+      const bushCount = Math.floor(area * 0.032);
       for (let i = 0; i < treeCount; i++) {
         const x = Math.floor(rand() * W);
         const y = Math.floor(rand() * H);
         if (isWalkable(x, y)) place('scenery_tree', x, y, 2);
       }
-      for (let i = 0; i < 30; i++) {
+      for (let i = 0; i < rockCount; i++) {
         const x = Math.floor(rand() * W);
         const y = Math.floor(rand() * H);
         if (isWalkable(x, y)) place('scenery_rock', x, y, 1);
       }
-      for (let i = 0; i < 50; i++) {
+      for (let i = 0; i < bushCount; i++) {
         const x = Math.floor(rand() * W);
         const y = Math.floor(rand() * H);
         if (isWalkable(x, y)) place('scenery_bush', x, y, 1);

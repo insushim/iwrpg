@@ -19,3 +19,9 @@ apps/client/src/data/**/*.js
 apps/server/src/**/*.js
 .vercel
 tmp/
+
+# session backups / temp
+apps/client/public/assets/img/characters/_walk_back_backup/
+apps/client/public/assets/img/npcs_orig_magenta/
+walk-v2.progress
+walk-v2.log

@@ -1,0 +1,238 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>룬워드 — 스프라이트 편집기</title>
+<style>
+  :root { --gold:#FCD34D; --line:#C9A227; }
+  * { box-sizing:border-box; }
+  body { margin:0; font:13px/1.5 ui-monospace,Menlo,monospace; background:#11151c; color:#e8e1c9;
+         display:flex; height:100vh; }
+  #stageWrap { flex:1; display:flex; align-items:center; justify-content:center; overflow:hidden; }
+  #stage { position:relative; width:520px; height:520px; border:1px solid #2a2f3a; border-radius:8px;
+           overflow:hidden; box-shadow:0 0 0 1px #000 inset; }
+  #ground { position:absolute; inset:0;
+            background-image:
+              linear-gradient(rgba(255,255,255,.06) 1px, transparent 1px),
+              linear-gradient(90deg, rgba(255,255,255,.06) 1px, transparent 1px);
+            background-size:32px 32px; }
+  #feetline { position:absolute; left:0; right:0; height:1px; background:rgba(252,211,77,.35); }
+  #vline { position:absolute; top:0; bottom:0; width:1px; background:rgba(252,211,77,.2); }
+  #shadow { position:absolute; border-radius:50%;
+            background:radial-gradient(ellipse at center, rgba(0,0,0,.85) 0%, rgba(0,0,0,.45) 55%, rgba(0,0,0,0) 75%); }
+  #char { position:absolute; image-rendering:pixelated; }
+  #refTile { position:absolute; width:32px; height:32px; border:1px dashed rgba(125,211,252,.7);
+             background:rgba(125,211,252,.08); }
+  #panel { width:300px; padding:16px; background:#0c0f15; border-left:1px solid #2a2f3a; overflow:auto; }
+  h1 { font-size:15px; color:var(--gold); margin:0 0 4px; }
+  .sub { color:#8b93a1; font-size:11px; margin:0 0 14px; }
+  .row { margin:12px 0; }
+  .row label { display:flex; justify-content:space-between; color:var(--gold); margin-bottom:3px; }
+  .row input[type=range] { width:100%; accent-color:var(--gold); }
+  select { width:100%; background:#1a1f29; color:#e8e1c9; border:1px solid #2a2f3a; border-radius:6px; padding:5px; }
+  .btns { display:flex; gap:8px; margin-top:14px; }
+  button { flex:1; background:#2A1810; color:var(--gold); border:1px solid var(--line);
+           border-radius:6px; padding:8px; cursor:pointer; font:inherit; }
+  button:hover { background:#3a2416; }
+  #code { margin-top:12px; background:#05070b; border:1px solid #2a2f3a; border-radius:6px;
+          padding:10px; white-space:pre-wrap; color:#9CA3AF; font-size:12px; }
+  .bgrow { display:flex; gap:6px; margin-top:6px; }
+  .bgrow button { padding:5px; font-size:11px; }
+</style>
+</head>
+<body>
+  <div id="stageWrap">
+    <div id="stage">
+      <div id="ground"></div>
+      <div id="vline"></div>
+      <div id="feetline"></div>
+      <div id="refTile" title="32px = 1타일"></div>
+      <div id="shadow"></div>
+      <img id="char" alt="char">
+    </div>
+  </div>
+
+  <div id="panel">
+    <h1>🛠 스프라이트 편집기</h1>
+    <p class="sub">게임과 동일한 기하로 미리보기.<br>점선 박스 = 1타일(32px). 노란 선 = 발 기준선.<br><b style="color:#FCD34D">캐릭터를 드래그</b>해서 위치 조정.</p>
+
+    <div class="row">
+      <label>직업</label>
+      <select id="cls">
+        <option value="sylvan_ranger">sylvan_ranger</option>
+        <option value="iron_sentinel">iron_sentinel</option>
+        <option value="aether_lord">aether_lord</option>
+        <option value="rune_weaver">rune_weaver</option>
+      </select>
+    </div>
+    <div class="row">
+      <label>프레임 (발 위치 확인용)</label>
+      <select id="frame">
+        <option value="idle_0">idle_0 (256×341)</option>
+        <option value="walk_side_0">walk_side_0 (384×1024)</option>
+        <option value="walk_front_0">walk_front_0</option>
+      </select>
+    </div>
+
+    <div class="row">
+      <label>캐릭터 크기(px) <span id="v-h"></span></label>
+      <input id="s-h" type="range" min="40" max="220" step="1">
+    </div>
+    <div class="row">
+      <label>발 위치 originY <span id="v-oy"></span></label>
+      <input id="s-oy" type="range" min="0.70" max="1.00" step="0.005">
+    </div>
+    <div class="row">
+      <label>그림자 X 오프셋 <span id="v-sx"></span></label>
+      <input id="s-sx" type="range" min="-40" max="40" step="1">
+    </div>
+    <div class="row">
+      <label>그림자 Y 오프셋 <span id="v-sy"></span></label>
+      <input id="s-sy" type="range" min="-30" max="40" step="1">
+    </div>
+    <div class="row">
+      <label>그림자 크기 <span id="v-ss"></span></label>
+      <input id="s-ss" type="range" min="0.20" max="2.60" step="0.01">
+    </div>
+    <div class="row">
+      <label>그림자 투명도 <span id="v-sa"></span></label>
+      <input id="s-sa" type="range" min="0" max="1" step="0.01">
+    </div>
+
+    <div class="row">
+      <label>배경</label>
+      <div class="bgrow">
+        <button data-bg="#5C9E4F">잔디</button>
+        <button data-bg="#9A6E45">흙</button>
+        <button data-bg="#7A8089">돌</button>
+        <button data-bg="#11151c">어둡게</button>
+      </div>
+    </div>
+
+    <div class="btns">
+      <button id="copy">📋 값 복사</button>
+      <button id="reset">↺ 기본값</button>
+    </div>
+    <div id="code"></div>
+  </div>
+
+<script>
+const BASE = 'file:///Users/sim-insu/Documents/dev/rpggame/runeword-chronicle/apps/client/public/assets/img/characters';
+const DEFAULTS = { h:100, oy:0.93, sx:0, sy:4, ss:1.15, sa:0.75, dx:0, dy:0 };
+const st = { ...DEFAULTS };
+const SHADOW_W = 48, SHADOW_H = 24; // fx_shadow texture base size
+
+const stage = document.getElementById('stage');
+const charEl = document.getElementById('char');
+const shEl = document.getElementById('shadow');
+const refTile = document.getElementById('refTile');
+const feet = document.getElementById('feetline');
+const vline = document.getElementById('vline');
+const clsSel = document.getElementById('cls');
+const frameSel = document.getElementById('frame');
+
+function CX(){ return stage.clientWidth/2; }
+function CY(){ return stage.clientHeight*0.55; } // feet anchor a bit below center
+
+function loadImg(){
+  charEl.src = `${BASE}/${clsSel.value}/${frameSel.value}.png`;
+}
+charEl.onload = render;
+charEl.onerror = () => { document.getElementById('code').textContent = '⚠ 이미지 로드 실패: ' + charEl.src; };
+
+function render(){
+  const cx = CX(), cy = CY();
+  // feet baseline + vertical center guides
+  feet.style.top = cy + 'px';
+  vline.style.left = cx + 'px';
+  // reference 1-tile box sitting on the feet line, just left of center
+  refTile.style.left = (cx - 60) + 'px';
+  refTile.style.top = (cy - 32) + 'px';
+
+  // character: natural aspect, displayed height = st.h, origin point at cy
+  const natW = charEl.naturalWidth || 256, natH = charEl.naturalHeight || 341;
+  const dispH = st.h, dispW = natW * (dispH / natH);
+  charEl.style.height = dispH + 'px';
+  charEl.style.width = dispW + 'px';
+  charEl.style.left = (cx - dispW/2 + st.dx) + 'px';
+  charEl.style.top = (cy - st.oy * dispH + st.dy) + 'px';
+
+  // shadow ellipse at feet + offset (x & y)
+  const sw = SHADOW_W * st.ss, sh = SHADOW_H * st.ss;
+  shEl.style.width = sw + 'px';
+  shEl.style.height = sh + 'px';
+  shEl.style.left = (cx - sw/2 + st.sx) + 'px';
+  shEl.style.top = (cy + st.sy - sh/2) + 'px';
+  shEl.style.opacity = st.sa;
+
+  // labels + code
+  document.getElementById('v-h').textContent = st.h;
+  document.getElementById('v-oy').textContent = st.oy;
+  document.getElementById('v-sx').textContent = st.sx;
+  document.getElementById('v-sy').textContent = st.sy;
+  document.getElementById('v-ss').textContent = st.ss;
+  document.getElementById('v-sa').textContent = st.sa;
+  document.getElementById('code').textContent =
+    `charDisplayH = ${st.h}\n` +
+    `charOriginY  = ${st.oy}\n` +
+    `charOffsetX  = ${st.dx}\n` +
+    `charOffsetY  = ${st.dy}\n` +
+    `shadowX      = ${st.sx}\n` +
+    `shadowY      = ${st.sy}\n` +
+    `shadowScale  = ${st.ss}\n` +
+    `shadowAlpha  = ${st.sa}`;
+}
+
+function bind(id, key, parse){
+  const el = document.getElementById(id);
+  el.value = st[key];
+  el.oninput = () => { st[key] = parse(el.value); render(); };
+}
+bind('s-h','h', parseFloat);
+bind('s-oy','oy', parseFloat);
+bind('s-sx','sx', parseFloat);
+bind('s-sy','sy', parseFloat);
+bind('s-ss','ss', parseFloat);
+bind('s-sa','sa', parseFloat);
+
+clsSel.onchange = loadImg;
+frameSel.onchange = loadImg;
+
+// Drag the character to reposition (sets charOffsetX / charOffsetY)
+let dragging = false, startX = 0, startY = 0, baseDx = 0, baseDy = 0;
+charEl.style.cursor = 'move';
+charEl.addEventListener('pointerdown', e => {
+  dragging = true; startX = e.clientX; startY = e.clientY;
+  baseDx = st.dx; baseDy = st.dy;
+  charEl.setPointerCapture(e.pointerId); e.preventDefault();
+});
+charEl.addEventListener('pointermove', e => {
+  if (!dragging) return;
+  st.dx = Math.round(baseDx + (e.clientX - startX));
+  st.dy = Math.round(baseDy + (e.clientY - startY));
+  render();
+});
+const endDrag = () => { dragging = false; };
+charEl.addEventListener('pointerup', endDrag);
+charEl.addEventListener('pointercancel', endDrag);
+
+document.querySelectorAll('[data-bg]').forEach(b => {
+  b.onclick = () => { stage.style.background = b.getAttribute('data-bg'); };
+});
+document.getElementById('copy').onclick = () => {
+  navigator.clipboard?.writeText(document.getElementById('code').textContent);
+  const btn = document.getElementById('copy'); const t = btn.textContent;
+  btn.textContent = '✓ 복사됨'; setTimeout(()=>btn.textContent=t, 1200);
+};
+document.getElementById('reset').onclick = () => {
+  Object.assign(st, DEFAULTS);
+  ['s-h:h','s-oy:oy','s-sx:sx','s-sy:sy','s-ss:ss','s-sa:sa'].forEach(p=>{const[a,b]=p.split(':');document.getElementById(a).value=st[b];});
+  render();
+};
+
+stage.style.background = '#5C9E4F';
+loadImg();
+window.addEventListener('resize', render);
+</script>
+</body>
+</html>

@@ -197,12 +197,13 @@ export class BootScene extends Phaser.Scene {
   /** Generate procedural placeholder textures so the game can run before codex assets arrive. */
   private generatePlaceholderTextures() {
     // Tiles always procedural (32×32 mosaic — codex tilesets are 1024×1024 atlases, used differently)
-    this.makeColorTile('tile_grass', 0x2D4F30, 0x3A6240);
-    this.makeColorTile('tile_dirt', 0x5C3D24, 0x4A2D1A);
-    this.makeColorTile('tile_stone', 0x4A4F58, 0x363B43);
-    this.makeColorTile('tile_water', 0x1E3A5F, 0x162B47);
-    this.makeColorTile('tile_wood', 0x4A2C19, 0x3A2010);
-    this.makeColorTile('tile_marble', 0xE5E1D5, 0xCFCBC0);
+    // Daylight palette — brightened so the world reads as daytime, not night.
+    this.makeColorTile('tile_grass', 0x5C9E4F, 0x77BC64);
+    this.makeColorTile('tile_dirt', 0x9A6E45, 0x7C5230);
+    this.makeColorTile('tile_stone', 0x7A8089, 0x60656E);
+    this.makeColorTile('tile_water', 0x2E5C8A, 0x244A72);
+    this.makeColorTile('tile_wood', 0x6E462A, 0x573420);
+    this.makeColorTile('tile_marble', 0xF0ECE0, 0xDAD6CB);
 
     // Character placeholder — only if real codex art failed to load
     if (!this.textures.exists('char_aether-lord')) this.makeCharSprite('char_aether-lord', 0x4F46E5, 'A');
